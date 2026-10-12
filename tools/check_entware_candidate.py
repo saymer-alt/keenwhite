@@ -26,7 +26,7 @@ def main():
  env=os.environ.copy();env.update(GOTOOLCHAIN='local',GOENV='off',GOWORK='off',GOTELEMETRY='off',CGO_ENABLED='0',GOOS='linux',GOARCH='amd64',GOMIPS='softfloat',GOPATH=str(work/'gopath'),GOCACHE=str(work/'gocache'));env.pop('GOROOT',None)
  assert run([go,'version'],env=env)=='go version go1.26.1 linux/amd64'
  # All existing client tests, plus importer boundaries and fuzz seeds; no public endpoint.
- tests=run([go,'test','-mod=readonly','-short','-count=1','./...'],cwd=ROOT/'go_client',env=env)
+ tests=run([go,'test','-mod=readonly','-short','-count=1','-timeout=120s','./...'],cwd=ROOT/'go_client',env=env)
  fuzz=run([go,'test','-mod=readonly','-run','^$','-fuzz','^FuzzQwdttParse$','-fuzztime=5s','-parallel=2'],cwd=ROOT/'go_client',env=env)
  expected={}
  for arch in ['amd64','arm64','mipsle','mips']:

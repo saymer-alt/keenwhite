@@ -122,6 +122,10 @@ func qWrite(path string, data []byte) error {
 	}
 	defer unix.Unlinkat(dir, tmp, 0)
 	f := os.NewFile(uintptr(fd), "private")
+	if f.Chmod(0600) != nil {
+		f.Close()
+		return qError("OUTPUT_REJECTED")
+	}
 	_, e = f.Write(data)
 	if e == nil {
 		e = f.Sync()
@@ -311,7 +315,10 @@ func qImport(o qOptions) error {
 	}
 	sock, e := net.ListenUDP("udp4", addr)
 	if e != nil {
-		return qError("PORT_OCCUPIED")
+		if errors.Is(e, unix.EADDRINUSE) {
+			return qError("PORT_OCCUPIED")
+		}
+		return qError("PORT_UNAVAILABLE")
 	}
 	sock.Close()
 	data, e := json.Marshal(c)
@@ -328,6 +335,10 @@ func qImport(o qOptions) error {
 	return qWrite(o.Output, append(data, '\n'))
 }
 func qImportCLI(args []string, out, errOut io.Writer) int {
+	if len(args) == 1 && (args[0] == "-h" || args[0] == "--help") {
+		fmt.Fprintln(out, "qWDTT offline import: -uri-file PRIVATE0600 -output-file NEW_PRIVATE0600 -auth account -device EXPLICIT_ID -credentials-file PRIVATE0600 -max-workers 1..4 -dns EXPLICIT_CHOICE; parent directories0700; no secret argv, no connection")
+		return 0
+	}
 	if unix.Setrlimit(unix.RLIMIT_CORE, &unix.Rlimit{}) != nil {
 		fmt.Fprintln(errOut, "WDTT_QWDTT_PRIVATE_PROCESS_REQUIRED")
 		return 78

@@ -4,6 +4,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"golang.org/x/sys/unix"
 	"net"
 	"net/url"
 	"os"
@@ -189,5 +190,49 @@ func FuzzQwdttParse(f *testing.F) {
 			t.Fatal("imported config violates runtime policy")
 		}
 	})
+}
+
+func TestQwdttAtomicAndSpecialFiles(t *testing.T) {
+	dir := t.TempDir()
+	os.Chmod(dir, 0700)
+	target := filepath.Join(dir, "kept")
+	os.WriteFile(target, []byte("KEEP"), 0600)
+	link := filepath.Join(dir, "link")
+	os.Symlink(target, link)
+	for _, path := range []string{target, link} {
+		if qWrite(path, []byte(qCanary)) == nil {
+			t.Fatal("existing file/link overwritten")
+		}
+	}
+	b, _ := os.ReadFile(target)
+	if string(b) != "KEEP" {
+		t.Fatal("foreign data changed")
+	}
+	fifo := filepath.Join(dir, "fifo")
+	if unix.Mkfifo(fifo, 0600) != nil {
+		t.Fatal("fixture FIFO")
+	}
+	if _, e := qRead(fifo); e == nil {
+		t.Fatal("FIFO accepted")
+	}
+	parentLink := filepath.Join(t.TempDir(), "parent")
+	os.Symlink(dir, parentLink)
+	if _, e := qRead(filepath.Join(parentLink, "kept")); e == nil {
+		t.Fatal("symlink directory accepted")
+	}
+	old := unix.Umask(0777)
+	defer unix.Umask(old)
+	output := filepath.Join(dir, "strict-umask.json")
+	if qWrite(output, []byte("{}")) != nil {
+		t.Fatal("private writer under strict umask")
+	}
+	st, _ := os.Stat(output)
+	if st.Mode().Perm() != 0600 {
+		t.Fatal("output not exactly private0600")
+	}
+	staged, _ := filepath.Glob(filepath.Join(dir, ".qwdtt-*"))
+	if len(staged) != 0 {
+		t.Fatal("staging files leaked")
+	}
 }
 func fmtInt(n int) string { return strconv.Itoa(n) }
