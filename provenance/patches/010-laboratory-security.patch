@@ -1,0 +1,173 @@
+--- a/go_client/main.go
++++ b/go_client/main.go
+@@ -106,8 +106,7 @@
+ 	return message
+ }
+ 
+-func main() {
+-	awgmSetup()
++func upstreamMain() {
+ 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
+ 
+ 	ctx, cancel := context.WithCancel(context.Background())
+@@ -141,7 +140,7 @@
+ 		for scanner.Scan() {
+ 			line := strings.TrimSpace(scanner.Text())
+ 			if !strings.Contains(line, "error:tunnel stopped") {
+-				log.Printf("[STDIN] %s", line)
++				log.Print("[STDIN] input suppressed")
+ 			}
+ 			switch {
+ 			case line == "PAUSE":
+@@ -183,6 +182,7 @@
+ 	socksAddr := flag.String("socks", "127.0.0.1:1080", "локальный SOCKS5 (только -mode socks)")
+ 
+ 	flag.Parse()
++	labApplyFlags()
+ 	applyCompatFlags(vkAuthMode, vkAnonPath)
+ 	activeConnMode := strings.ToLower(strings.TrimSpace(*connMode))
+ 	switch activeConnMode {
+@@ -322,7 +322,8 @@
+ 	// Слушаем локально (SO_REUSEADDR — быстрый перезапуск без «address already in use»)
+ 	localConn, err := listenUDP(*listen)
+ 	if err != nil {
+-		log.Fatalf("[КЛИЕНТ] Ошибка слушателя %s: %v", *listen, err)
++		labStatus("PORT_CONFLICT")
++		os.Exit(78)
+ 	}
+ 	if uc, ok := localConn.(*net.UDPConn); ok {
+ 		_ = uc.SetReadBuffer(socketBufSize)
+@@ -400,18 +401,11 @@
+ 				}
+ 				finalConf = strings.Join(newLines, "\n")
+ 			}
+-			fmt.Println()
+-			fmt.Println("╔══════════════ WireGuard Конфиг ══════════════╗")
+-			for _, line := range strings.Split(finalConf, "\n") {
+-				fmt.Printf("║ %-44s ║\n", line)
+-			}
+-			fmt.Println("╚══════════════════════════════════════════════╝")
+-			awgmSetWGConfig(finalConf)
+-			if err := os.WriteFile("wg-turn.conf", []byte(finalConf+"\n"), 0600); err != nil {
+-				log.Printf("[КОНФИГ] Ошибка сохранения: %v", err)
+-			} else {
+-				log.Println("[КОНФИГ] Сохранён в wg-turn.conf")
+-			}
++			if err := labWrite("wg-turn.conf", []byte(finalConf+"\n")); err != nil {
++				labStatus("CONFIG_WRITE_FAILED")
++				os.Exit(78)
++			}
++			labStatus("CONFIG_READY")
+ 
+ 			if activeConnMode == "socks" {
+ 				dev, tnet, err := startUserspaceWireGuard(finalConf)
+--- a/go_client/listen.go
++++ b/go_client/listen.go
+@@ -1,24 +1,6 @@
+ package main
+ 
+-import (
+-	"context"
+-	"net"
+-	"syscall"
+-)
++import "net"
+ 
+-// listenUDP binds a UDP socket with SO_REUSEADDR so a quick restart can reclaim
+-// 127.0.0.1:port after the previous client process exits.
+-func listenUDP(addr string) (net.PacketConn, error) {
+-	lc := net.ListenConfig{
+-		Control: func(network, address string, c syscall.RawConn) error {
+-			var setErr error
+-			if err := c.Control(func(fd uintptr) {
+-				setErr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
+-			}); err != nil {
+-				return err
+-			}
+-			return setErr
+-		},
+-	}
+-	return lc.ListenPacket(context.Background(), "udp", addr)
+-}
++// An occupied endpoint is a conflict, including when another socket uses REUSEADDR.
++func listenUDP(addr string) (net.PacketConn, error) { return net.ListenPacket("udp4", addr) }
+--- a/go_client/group.go
++++ b/go_client/group.go
+@@ -5,6 +5,7 @@
+ 	"log"
+ 	"math/rand"
+ 	"net"
++	"os"
+ 	"strings"
+ 	"sync"
+ 	"sync/atomic"
+@@ -198,11 +199,16 @@
+ 
+ 					if strings.Contains(errStr, "хеш мёртв") ||
+ 						strings.Contains(errStr, "FATAL_AUTH") {
+-						log.Printf("[ВОРКЕР #%d] Фатальная ошибка: %s", wid, errStr)
++						labStatus("FATAL_AUTH")
++						os.Exit(78)
+ 						return
+ 					}
+ 
+ 					attempt++
++					if attempt >= 5 {
++						labStatus("NETWORK_RETRY_EXHAUSTED")
++						os.Exit(75)
++					}
+ 					if isTurnQuota {
+ 						log.Printf("[ВОРКЕР #%d] [TURN] Квота relay исчерпана (один аккаунт VK = мало слотов), ждём: %s", wid, errStr)
+ 					} else if turnAllocAttrMissing {
+@@ -229,7 +235,7 @@
+ 					return
+ 				}
+ 
+-				retryDelay := time.Duration(5+rand.Intn(11)) * time.Second
++				retryDelay := time.Second << min(attempt, 5)
+ 				if quotaRetry {
+ 					retryDelay = time.Duration(30+rand.Intn(31)) * time.Second
+ 				}
+--- a/go_client/profiles.go
++++ b/go_client/profiles.go
+@@ -4,7 +4,7 @@
+ 	"encoding/json"
+ 	"log"
+ 	"math/rand"
+-	"os"
++	"path/filepath"
+ )
+ 
+ // Profile holds consistent browser fingerprint headers for TLS+HTTP requests.
+@@ -28,7 +28,7 @@
+ )
+ 
+ func LoadProfileFromDisk() (*SavedProfile, error) {
+-	data, err := os.ReadFile(profileFile)
++	data, err := labRead(filepath.Join(labDir, profileFile))
+ 	if err != nil {
+ 		return nil, err
+ 	}
+@@ -60,10 +60,10 @@
+ 	if err != nil {
+ 		return nil, err
+ 	}
+-	if err := os.WriteFile(profileFile, data, 0644); err != nil {
++	if err := labWrite(profileFile, data); err != nil {
+ 		return nil, err
+ 	}
+-	if err := os.WriteFile(captchaBrowserFpFile, []byte(fp), 0644); err != nil {
++	if err := labWrite(captchaBrowserFpFile, []byte(fp)); err != nil {
+ 		return nil, err
+ 	}
+ 	log.Printf("[КАПЧА] captcha profile rotated (fp=%s...)", fp[:8])
+--- a/go_client/session.go
++++ b/go_client/session.go
+@@ -348,6 +348,7 @@
+ 		SendCh: make(chan []byte, workerSendBuf),
+ 	}
+ 	d.Register(slot)
++ labWorkerRegistered()
+ 	defer d.Unregister(slot)
+ 
+ 	// Proxy DTLS ↔ Dispatcher

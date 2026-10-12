@@ -5,6 +5,7 @@ import (
 	"log"
 	"math/rand"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -198,11 +199,16 @@ func WorkerGroup(
 
 					if strings.Contains(errStr, "хеш мёртв") ||
 						strings.Contains(errStr, "FATAL_AUTH") {
-						log.Printf("[ВОРКЕР #%d] Фатальная ошибка: %s", wid, errStr)
+						labStatus("FATAL_AUTH")
+						os.Exit(78)
 						return
 					}
 
 					attempt++
+					if attempt >= 5 {
+						labStatus("NETWORK_RETRY_EXHAUSTED")
+						os.Exit(75)
+					}
 					if isTurnQuota {
 						log.Printf("[ВОРКЕР #%d] [TURN] Квота relay исчерпана (один аккаунт VK = мало слотов), ждём: %s", wid, errStr)
 					} else if turnAllocAttrMissing {
@@ -229,7 +235,7 @@ func WorkerGroup(
 					return
 				}
 
-				retryDelay := time.Duration(5+rand.Intn(11)) * time.Second
+				retryDelay := time.Second << min(attempt, 5)
 				if quotaRetry {
 					retryDelay = time.Duration(30+rand.Intn(31)) * time.Second
 				}

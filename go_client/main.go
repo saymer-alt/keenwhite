@@ -106,8 +106,7 @@ func sanitizeHashCheckMessage(message string) string {
 	return message
 }
 
-func main() {
-	awgmSetup()
+func upstreamMain() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -141,7 +140,7 @@ func main() {
 		for scanner.Scan() {
 			line := strings.TrimSpace(scanner.Text())
 			if !strings.Contains(line, "error:tunnel stopped") {
-				log.Printf("[STDIN] %s", line)
+				log.Print("[STDIN] input suppressed")
 			}
 			switch {
 			case line == "PAUSE":
@@ -183,6 +182,7 @@ func main() {
 	socksAddr := flag.String("socks", "127.0.0.1:1080", "локальный SOCKS5 (только -mode socks)")
 
 	flag.Parse()
+	labApplyFlags()
 	applyCompatFlags(vkAuthMode, vkAnonPath)
 	activeConnMode := strings.ToLower(strings.TrimSpace(*connMode))
 	switch activeConnMode {
@@ -322,7 +322,8 @@ func main() {
 	// Слушаем локально (SO_REUSEADDR — быстрый перезапуск без «address already in use»)
 	localConn, err := listenUDP(*listen)
 	if err != nil {
-		log.Fatalf("[КЛИЕНТ] Ошибка слушателя %s: %v", *listen, err)
+		labStatus("PORT_CONFLICT")
+		os.Exit(78)
 	}
 	if uc, ok := localConn.(*net.UDPConn); ok {
 		_ = uc.SetReadBuffer(socketBufSize)
@@ -400,18 +401,11 @@ func main() {
 				}
 				finalConf = strings.Join(newLines, "\n")
 			}
-			fmt.Println()
-			fmt.Println("╔══════════════ WireGuard Конфиг ══════════════╗")
-			for _, line := range strings.Split(finalConf, "\n") {
-				fmt.Printf("║ %-44s ║\n", line)
+			if err := labWrite("wg-turn.conf", []byte(finalConf+"\n")); err != nil {
+				labStatus("CONFIG_WRITE_FAILED")
+				os.Exit(78)
 			}
-			fmt.Println("╚══════════════════════════════════════════════╝")
-			awgmSetWGConfig(finalConf)
-			if err := os.WriteFile("wg-turn.conf", []byte(finalConf+"\n"), 0600); err != nil {
-				log.Printf("[КОНФИГ] Ошибка сохранения: %v", err)
-			} else {
-				log.Println("[КОНФИГ] Сохранён в wg-turn.conf")
-			}
+			labStatus("CONFIG_READY")
 
 			if activeConnMode == "socks" {
 				dev, tnet, err := startUserspaceWireGuard(finalConf)

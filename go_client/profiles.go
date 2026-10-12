@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"math/rand"
-	"os"
+	"path/filepath"
 )
 
 // Profile holds consistent browser fingerprint headers for TLS+HTTP requests.
@@ -28,7 +28,7 @@ const (
 )
 
 func LoadProfileFromDisk() (*SavedProfile, error) {
-	data, err := os.ReadFile(profileFile)
+	data, err := labRead(filepath.Join(labDir, profileFile))
 	if err != nil {
 		return nil, err
 	}
@@ -60,10 +60,10 @@ func rotateCaptchaProfile() (*SavedProfile, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(profileFile, data, 0644); err != nil {
+	if err := labWrite(profileFile, data); err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(captchaBrowserFpFile, []byte(fp), 0644); err != nil {
+	if err := labWrite(captchaBrowserFpFile, []byte(fp)); err != nil {
 		return nil, err
 	}
 	log.Printf("[КАПЧА] captcha profile rotated (fp=%s...)", fp[:8])

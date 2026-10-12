@@ -348,6 +348,7 @@ func RunSession(
 		SendCh: make(chan []byte, workerSendBuf),
 	}
 	d.Register(slot)
+ labWorkerRegistered()
 	defer d.Unregister(slot)
 
 	// Proxy DTLS ↔ Dispatcher
