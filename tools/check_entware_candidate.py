@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Isolated candidate acceptance using pinned Entware/KAS recipes; no publication."""
-import argparse,hashlib,json,os,pathlib,shutil,subprocess,sys
+import argparse,hashlib,io,json,os,pathlib,shutil,subprocess,sys,tarfile
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 ENTWARE='beb7e12c61deba465cdccfac77c8bb41ab0df89c'
 KAS='7c01e29c0ef278532e083a0d6868cfef4d2ca003'
@@ -41,13 +41,23 @@ def main():
  (wd/'fork-source-lock.json').write_text(json.dumps(lock,indent=2)+'\n')
  # The Phase5 binary-equality test cannot describe a new importer executable.
  # Replace only that comparison in the PRIVATE recipe with independently built
- # candidate equality; still require identical relay, module graph and notices.
+ # candidate equality; compare third-party inventory against the maintained base.
+ base_source=work/'base-source';base_source.mkdir()
+ raw=subprocess.check_output(['git','-C',str(ROOT),'archive',BASE])
+ with tarfile.open(fileobj=io.BytesIO(raw)) as archive:archive.extractall(base_source,filter='data')
+ run(['python3',wd/'license_audit.py','--go',go,'--module',base_source/'go_client','--output',work/'base-inventory'],env=env)
  build=wd/'build_lab.py';text=build.read_text();start=text.index("    baseline=json.loads((HERE/'phase4-source-baseline.json').read_text())");end=text.index("    (work/'build-report.json').write_text",start)
  replacement="    baseline=json.loads((HERE/'phase4-source-baseline.json').read_text())\n"
  replacement+="    expected="+repr(expected)+"\n"
  replacement+="    for record in records:assert record['sha256']==expected[record['arch']], 'CANDIDATE_REPRODUCIBILITY_FAILED'\n"
- replacement+="    for key in ['relay_sha256','notice_collection_sha256','dependency_source_audit_sha256']:assert report[key]==baseline[key],key+' unexpectedly changed'\n"
- replacement+="    report['candidate_comparison']={'client_sha256_before':baseline['client_sha256'],'client_sha256_after':expected,'independent_candidate_rebuild_identical':True,'relay_notices_inventory_identical':True,'reason':'explicit qWDTT entry and bounded multi-hash account grouping; no protocol/worker-limit change'}\n"
+ replacement+="    assert report['relay_sha256']==baseline['relay_sha256'], 'RELAY_CHANGED'\n"
+ replacement+="    old=json.loads((work.parent/'base-inventory/dependency-source-audit.json').read_text());new=json.loads((work/'license-evidence/dependency-source-audit.json').read_text())\n"
+ replacement+="    assert old['modules']==new['modules'] and old['packages']==new['packages'], 'DEPENDENCY_GRAPH_CHANGED'\n"
+ replacement+="    external=lambda inventory:{k:v for k,v in inventory['sources'].items() if not k.startswith('wg-turn-client@LOCAL/')}\n"
+ replacement+="    assert external(old)==external(new), 'THIRD_PARTY_SOURCE_CHANGED'\n"
+ replacement+="    prefix=lambda path:path.read_text().split('===== SELECTED SOURCE COPYRIGHT HEADERS =====')[0]\n"
+ replacement+="    assert prefix(work.parent/'base-inventory/NOTICE-COLLECTION.txt')==prefix(work/'license-evidence/NOTICE-COLLECTION.txt'), 'LICENSE_TEXT_CHANGED'\n"
+ replacement+="    report['candidate_comparison']={'client_sha256_before':baseline['client_sha256'],'client_sha256_after':expected,'independent_candidate_rebuild_identical':True,'relay_identical':True,'third_party_sources_and_notices_identical':True,'local_source_inventory_changed':True,'reason':'explicit qWDTT entry and bounded multi-hash account grouping; local source headers and inventory change with implementation; no protocol/worker-limit change'}\n"
  build.write_text(text[:start]+replacement+text[end:])
  built=work/'build'
  run(['python3',build,'--go',go,'--sdk-archive',pathlib.Path(a.sdk).resolve(),'--work',built,'--source',ROOT,'--cache',work/'gocache','--modules',work/'gopath'])
