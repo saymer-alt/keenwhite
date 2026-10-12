@@ -31,7 +31,7 @@ def main():
   'go_client/socks5.go':'83dd16836debb08a58a8452e090a49d9b130acf8',
   'go_client/lab_socks_mode_test.go':'70e555096897d2b672b3d9e39828cc64088a6311',
   'go_client/socks_service.go':'43c53996b0afebb7a34ed3d85e0165a6f3b7b5b8',
-  'go_client/socks_udp_associate.go':'9aadb7a2b9f8c29f72ad14611225de0266ffc368',
+  'go_client/socks_udp_associate.go':'df71ad294b9afc6b1d004a10dae8a2b846313098',
   'go_client/socks_udp_associate_test.go':'831a65d2720dfab7cca8c4eb2800e6ed81f12551',
   'hardened-relay/server_pair_fixture_test.go':'2c29f2276dcc699bc2b9863e995b712a572d460c',
   'tools/check_socks_udp_pair.py':'2523ec173a79f16c4f697015024dcab67e893142',
