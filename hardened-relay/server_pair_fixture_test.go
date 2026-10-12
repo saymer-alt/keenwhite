@@ -16,6 +16,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -122,10 +123,11 @@ func TestLocalPairHarness(t *testing.T) {
 	}
 	defer turnSock.Close()
 	turnServer, err := turn.NewServer(turn.ServerConfig{Realm: "wdtt-local", AuthHandler: func(a *turn.RequestAttributes) (string, []byte, bool) {
-		if a.Username != "fixture" {
+		if a.Username != "fixture" && !(os.Getenv("WDTT_QWDTT_CLIENT") != "" && a.Username == "fixture2") {
 			return "", nil, false
 		}
-		return "fixture", turn.GenerateAuthKey("fixture", a.Realm, "SYNTHETIC-TURN-PASSWORD"), true
+		if a.Username == "fixture2" { _ = os.WriteFile(filepath.Join(dir,"qwdtt-second-hash-turn"),[]byte("SECOND_HASH_AUTH_REQUESTED\n"),0600) }
+		return a.Username, turn.GenerateAuthKey(a.Username, a.Realm, "SYNTHETIC-TURN-PASSWORD"), true
 	}, PacketConnConfigs: []turn.PacketConnConfig{{PacketConn: turnSock, PermissionHandler: func(_ net.Addr, ip net.IP) bool { return ip.IsLoopback() }, RelayAddressGenerator: &turn.RelayAddressGeneratorStatic{RelayAddress: net.ParseIP("127.0.0.1"), Address: "127.0.0.1"}}}})
 	if err != nil {
 		t.Fatal(err)
@@ -166,15 +168,19 @@ func TestLocalPairHarness(t *testing.T) {
 	}()
 	}
 	creds := map[string]any{"hashes": map[string]any{"fixture": map[string]any{"u": "fixture", "p": "SYNTHETIC-TURN-PASSWORD", "urls": []string{"turn:127.0.0.1:19002?transport=udp"}}}}
+	if os.Getenv("WDTT_QWDTT_CLIENT")!="" {creds["hashes"].(map[string]any)["fixture2"]=map[string]any{"u":"fixture2","p":"SYNTHETIC-TURN-PASSWORD","urls":[]string{"turn:127.0.0.1:19002?transport=udp"}}}
 	cbytes, _ := json.Marshal(creds)
 	if os.WriteFile(filepath.Join(dir, "turn-creds.json"), cbytes, 0600) != nil {
 		t.Fatal("creds write")
 	}
 	config := map[string]any{"peer": "127.0.0.1:19003", "listen": "127.0.0.1:19000", "password": password, "vk": "fixture", "auth": "account", "creds_file": filepath.Join(dir, "turn-creds.json"), "dns": "custom:127.0.0.1", "workers": 1, "device": "fixture"}
 	cfg, _ := json.Marshal(config)
-	if os.WriteFile(filepath.Join(dir, "client.json"), cfg, 0600) != nil {
-		t.Fatal("config write")
-	}
+	if client:=os.Getenv("WDTT_QWDTT_CLIENT");client!="" {
+		uri:="qwdtt://config?"+url.Values{"name":{"Synthetic pair"},"peer":{"127.0.0.1:19003"},"hashes":{"fixture,fixture2"},"workers":{"2"},"port":{"19000"},"pass":{password}}.Encode()
+		input:=filepath.Join(dir,"profile.uri");if os.WriteFile(input,[]byte(uri),0600)!=nil{t.Fatal("private URI write")}
+		cmd:=exec.Command(client,"-import-qwdtt","-uri-file",input,"-output-file",filepath.Join(dir,"client.json"),"-auth","account","-device","fixture","-credentials-file",filepath.Join(dir,"turn-creds.json"),"-dns","custom:127.0.0.1","-max-workers","2")
+		if err:=cmd.Run();err!=nil{t.Fatal("private import rejected")}
+	} else if os.WriteFile(filepath.Join(dir, "client.json"), cfg, 0600) != nil {t.Fatal("config write")}
 	if os.WriteFile(filepath.Join(dir, "READY"), []byte("LOCAL-ONLY\n"), 0600) != nil {
 		t.Fatal("ready write")
 	}
