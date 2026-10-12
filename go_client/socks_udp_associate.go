@@ -7,7 +7,6 @@ import (
     "context"
     "encoding/binary"
     "errors"
-    "io"
     "net"
     "sync"
     "time"
