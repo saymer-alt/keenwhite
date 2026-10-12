@@ -107,8 +107,8 @@ func labStatus(code string) {
 
 
 // GETCONF uses its own status file because any already-established DTLS worker
- // may be registered while a different worker awaits its 45-second reply.
- // Never record server-supplied text, keys, passwords or arbitrary error strings.
+// may be registered while a different worker awaits its 45-second reply.
+// Never record server-supplied text, keys, passwords or arbitrary error strings.
 var labGetConfMu sync.Mutex
 var labGetConfFinal bool
 
@@ -139,7 +139,7 @@ func labGetConfStatus(code string) {
 
 func labGetConfResult(conf string, err error) string {
 	if err != nil {
-		if strings.Contains(err.Error(), "FATAL_AUTH") {
+		if strings.HasPrefix(err.Error(), "FATAL_AUTH:") {
 			return "GETCONF_DENIED"
 		}
 		var timeout net.Error
