@@ -121,4 +121,4 @@ jobs:
             --title "WDTT qWDTT owner-test ARM64 + MIPSel ($short)" \
             --notes-file "$RUNNER_TEMP/WDTT_RELEASE_NOTES.md" \
             --prerelease --latest=false
-          gh release view "$tag" --repo "$GH_REPO" --json url,tagName,isPrerelease,isLatest,assets --jq '{url,tagName,isPrerelease,isLatest,assets:[.assets[].name]}'
+          gh release view "$tag" --repo "$GH_REPO" --json url,tagName,isPrerelease,assets --jq '{url,tagName,isPrerelease,assets:[.assets[].name]}'
