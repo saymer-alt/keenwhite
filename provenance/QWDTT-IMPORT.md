@@ -83,6 +83,6 @@ candidate runner uses pinned Entware/KAS recipes in a disposable copy, repeats
 ARM64/MIPSel and two extra ELF builds, real opkg, POSIX/BusyBox lifecycle,
 publication safety and local TURN/WG/Mihomo tests. New client hashes are expected
 because the importer and account grouping were added; an independent build
-must match them. Relay/module locks/notices/inventory remain exact. The actual
+must match them. Relay, module locks, third-party source inventory and license texts remain exact; local source headers/inventory change with the implementation. The actual
 entware-go pin/recipes and KAS source are not changed by this PR. CI uploads only
 JSON evidence, never ELF/IPK. Real VK/public-server/hardware tests remain separate.
