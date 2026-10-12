@@ -62,7 +62,7 @@ jobs:
           cp candidate-work/build/wt-client-linux-mipsle owner-lab/wt-client-linux-mipsle
           file owner-lab/wt-client-linux-mipsle | grep -q 'MIPS'
           (cd owner-lab && sha256sum wt-client-linux-mipsle > SHA256SUMS && sha256sum -c SHA256SUMS)
-          printf 'SOURCE_COMMIT=%s\nOWNER_LAB_ONLY=true\nPROXY_MODE=SOCKS_TCP_ONLY\nSUPPORTED_KAS_WDTT_256MB=false\n' "$GITHUB_SHA" > owner-lab/BUILD-INFO.txt
+          printf 'SOURCE_COMMIT=%s\nOWNER_LAB_ONLY=true\nPROXY_MODE=SOCKS_TCP_UDP\nSUPPORTED_KAS_WDTT_256MB=false\n' "$GITHUB_SHA" > owner-lab/BUILD-INFO.txt
           tag="wdtt-owner-lab-socks-udp-$(printf '%s' "$GITHUB_SHA" | cut -c1-12)"
           if gh release view "$tag" --repo "$GH_REPO" >/dev/null 2>&1; then
             echo "Release tag already exists; refusing overwrite"
