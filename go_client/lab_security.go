@@ -228,6 +228,7 @@ func main() {
 	}
 	os.Args = os.Args[:1]
 	labStatus("STARTING")
+	labGetConfStatus("NOT_REQUESTED")
 	if labWrite("transport-ready", []byte("STARTING\n")) != nil {
 		os.Exit(78)
 	}
