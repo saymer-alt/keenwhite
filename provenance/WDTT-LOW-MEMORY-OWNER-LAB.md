@@ -57,6 +57,7 @@ sudo --preserve-env=GOPATH,GOCACHE python3 tools/check_lowmem_lab.py \
 | qWDTT workers | 9, 16=9+7, 18=9+9; global account budget 1–4; hash selection unchanged | No substitution of two workers for a two-hash 18-worker profile |
 | Dispatcher | SendCh=128 packets/worker; pooled packet capacity 2048 B; ReturnCh=384 | Fully occupied payloads: 256 KiB/worker (9=2.25 MiB, 18=4.5 MiB), return queue 0.75 MiB; channel metadata and pool retention extra; capacities are not eager allocations |
 | RunSession | Four read arrays total 6880 B/worker; DTLS, TURN state, connutil packet pipes and goroutines extra | One live transport per worker; reconnect overlaps/loss are not bounded by this arithmetic |
+| connutil packet pipes | `RunSession` calls `AsyncPacketPipe()`; locked connutil v1.0.1 delegates to `LimitedAsyncPacketPipe(0)`. Its zero softLimit permits unbounded `bytes.Buffer` and packet-length queue growth | **No finite backlog budget if a consumer stalls.** SendCh=128 does not bound this separate queue; reducing packet allocation does not fix it |
 | TURN socket | Requests RX and TX 625 KiB each per session, plus local dispatcher socket | Kernel may cap/double the requests; skbuff usage is lazy, outside Go heap and not equal to process RSS. Model harness records actual getsockopt values |
 | WireGuard | Encryption/decryption/handshake workers each scale with runtime.NumCPU; queue sizes 1024; dynamic buffer pools, max segment 65535 B | GOMAXPROCS alone does not normalize worker count; taskset does. Burst retention can dominate tiny transport buffers |
 | gVisor TCP | Default send **and** receive limits 1 MiB/endpoint, max 4 MiB, receive moderation enabled | Logical bounds, not eager 2 MiB allocations. Traffic-dependent socket/payload memory can dominate. No dependency patch or unsafe access to private stack internals |
@@ -71,6 +72,19 @@ Source audit uses the locked module versions (gVisor
 socket memory, TCP TIME_WAIT, lazy pools and GC explain why idle snapshots and
 sum-of-constants estimates cannot predict the traffic peak. A plateau or
 post-GC reclamation in a local test does not prove all reconnect paths leak-free.
+
+Concrete unresolved memory blocker: the asynchronous packet pipe above can
+accumulate traffic independently of dispatcher channels. Source evidence is
+`go_client/session.go` RunSession pipe creation and connutil v1.0.1
+`packet_pipe.go` / `bufferedPacketPipe.go`: zero-limit Write appends both packet
+length metadata and payload without waiting for a consumer. The allocation
+profiles also include this buffer path, but **do not prove it caused the owner's
+incident or CI reset**. No finite worst-case RAM/headroom is established here.
+Changing to a bounded pipe is a separate, measured candidate: it must verify
+DTLS record/handshake sizing, bidirectional backpressure, slow TURN/consumer,
+deadline and cancellation teardown without deadlock or changed packet framing.
+No arbitrary pipe limit, transport rewrite or dependency patch is introduced.
+This blocker reinforces research-only status and no new hardware admission.
 
 ## Narrow changes and byte/lifecycle proof
 
@@ -301,6 +315,7 @@ admission decisions from other projects are not changed here.
 - CI results are the exact PR head checks. No binary artifacts or release are
   produced by the added workflow. No new license audit or changed module locks.
 - Unverified: real ARM64/MIPSel traffic RSS/CPU, anonymous VK provider/refresh,
+  a bounded packet-pipe backlog under stalled consumers,
   packet loss/reordering and slow peers, worst-case 64-flow load, shared-device
   pressure with Mihomo, actual main cutoff and subsequent owner-controlled
   recovery. No hardware acceptance or deployable package is claimed.
