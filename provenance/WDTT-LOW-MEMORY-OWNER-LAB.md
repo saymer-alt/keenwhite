@@ -1,8 +1,8 @@
 # WDTT low-memory owner lab — Issue #19
 
 Status: **RESEARCH ONLY; no 512 MiB hardware admission**. Allocation reductions
-are demonstrated. The full local transport's peak RSS has **not** improved in
-the short paired matrix. Keep every existing memory floor. No router, KAS,
+are demonstrated. Full-transport peak RSS improvement is **not consistent**
+across worker plans and paired runs. Keep every existing memory floor. No router, KAS,
 Mihomo, production route, release or main/stable change is authorized here.
 
 ## Source and reproducibility
@@ -104,6 +104,8 @@ Includes a real idle userspace WG device, saturated dispatcher queue/socket
 **models** for 9/18, held TCP relays, 500000 WRAP packets of 1400 B, and 500000
 UDP replies with four scratch slots. Queue/socket models are **not TURN sessions**;
 held TCP remotes use net.Pipe and are not a loaded WAN benchmark.
+The 64 held relay helper is a component stress model, not permission for an
+amd64/low-memory SOCKS listener to admit 64 clients.
 
 | Metric | Baseline | Candidate |
 |---|---:|---:|
@@ -125,7 +127,8 @@ Final goroutines return to two; RSS/HeapSys retention is not itself a leak.
 Actual 9/18 simultaneous RunSession TURN/DTLS sessions, hardened AUTH fixture,
 userspace WG/netstack and SOCKS. Explicit supplied synthetic credentials bypass
 only the **test harness's** VK provider, never a shipping admission gate.
-Each run verifies 84 MiB bulk data (14 upload + 14 download flows per round,
+Each run verifies 84 MiB bulk data (upload length and download byte pattern;
+14 upload + 14 download flows per round,
 three rounds), plus 1.68 MB UDP echo payload through four associations. All
 endpoints are synthetic and inside a fresh loopback-only network namespace.
 
@@ -138,6 +141,8 @@ endpoints are synthetic and inside a fresh loopback-only network namespace.
 | 9-worker idle sampled RSS KiB | 30248 / 20136 / 21536 | 28668 / 21484 / 21724 |
 | 18-worker idle sampled RSS KiB | 26336 / 24528 / 28880 | 28752 / 32320 / 24888 |
 | 18-worker median TCP flow seconds, per run | 2.337 / 2.443 / 2.265 | 2.397 / 2.455 / 2.440 |
+
+Flow times include SOCKS negotiation and a 1 MiB HTTP transfer, not ping RTT.
 
 All twelve short cases pass payload verification and release their owned
 sessions on stop. **The component RSS reduction does not establish an E2E peak
@@ -169,10 +174,34 @@ further investigation of dependency/queue retention, without changing it here.
 
 ### 30-minute local soak
 
-Paired 18-worker soaks are being measured separately from the short matrix:
+One paired 18-worker soak completed separately from the short matrix:
 disjoint two-CPU affinities, separate network namespaces, same traffic burst
 each minute, four UDP controls. They include startup, load, idle between bursts
-and final cleanup. Numeric final results will be recorded before final handoff.
+and final cleanup. Both completed **30 bursts**, 840 MiB bulk transfers and
+16.8 MB UDP payload, then terminal **TIME_LIMIT**; final sample elapsed time
+1800300 ms in each process. This used the original driver, with minute spacing
+between bursts, before the test-only active-slot drain instrumentation.
+
+| Metric | Baseline | Candidate |
+|---|---:|---:|
+| Maximum observed HWM KiB | 149644 | 146772 (−1.9%) |
+| Initial idle sampled RSS KiB | 30028 | 24956 |
+| Loaded sampled peak RSS KiB | 149644 | 146772 |
+| Post-close sampled RSS KiB | 70464 | 30840 |
+| Total Go allocated bytes | 12307887736 | 11589966776 (−5.8%) |
+| Final NumGC | 258 | 245 |
+| Sampled cumulative user / system CPU seconds | 84.98 / 49.80 | 83.16 / 50.43 |
+| Median 1 MiB TCP flow seconds | 2.866 | 2.796 |
+| Final goroutines / descriptors | 3 / 9 | 3 / 9 |
+
+This is **one pair**, not repeatable hardware peak/CPU evidence. Post-close
+RSS depends on GC/scavenger timing: final HeapAlloc is similar (~26.8/~26.5 MB),
+so the large post-close RSS difference is not a demonstrated permanent saving.
+The final three goroutines include the test sampler/dispatcher still in scope;
+transport sessions have joined, and process exit releases the remaining lab
+resources. Kernel VmSwap samples are zero; host memory/IO metrics are shared,
+not a router pressure test. Full numeric evidence: `lowmem/soak-comparison.json`.
+
 The test harness has a fixed 30-minute context; **this does not execute the
 shipping main's os.Exit(75)**. That literal production cutoff remains unchanged
 and source-guarded; a timed run of the actual main on approved hardware is
@@ -185,6 +214,36 @@ The memory-only server run limit is now 31 minutes; default fixture behavior
 and production server code are unchanged. One separate profiling attempt
 failed session readiness; a retry passed. No failed run is counted as a pass.
 
+### Independent GitHub CI reproduction
+
+[Memory lab run 38395136720](https://github.com/saymer-alt/proxy-turn-vk-android/actions/runs/38395136720)
+and [Entware acceptance run 38395136665](https://github.com/saymer-alt/proxy-turn-vk-android/actions/runs/38395136665)
+passed for source head `f22971322140e0d8c9b107771bdd38f0c01bde8d`.
+This older CI checkout used temporary PR merge `25f43ce234dbbac371ba1f738ea35dc4ff7aab69`;
+GitHub API confirmed identical tree `3505f3009064a97521c7db9ba3f8b62e78e541ed`
+to that source head. The added memory workflow now explicitly checks out the
+immutable PR **head SHA**, rather than relying on merge-ref tree equivalence.
+No test executable here is a release candidate.
+
+On that independent Ubuntu runner, two CPUs, updated bounded-load harness:
+
+| Metric | Baseline | Candidate |
+|---|---:|---:|
+| Component median HWM KiB | 58180 | 45952 (−21.0%) |
+| 9-worker three HWM KiB | 173692 / 166964 / 243748 | 156352 / 193132 / 163204 |
+| 9-worker median HWM KiB | 173692 | 163204 (−6.0%) |
+| 18-worker three HWM KiB | 223144 / 175836 / 165244 | 180352 / 175532 / 213364 |
+| 18-worker median HWM KiB | 175836 | 180352 (+2.6%) |
+
+All twelve bounded-load cases passed. Drain waits were at most ~0.151 s;
+there was no failed-transfer retry. Export: `lowmem/ci-f229713-comparison.json`.
+Do not combine these runner peaks with WSL samples into one median. This host
+again does **not** demonstrate a reliable 18-worker peak improvement. Some
+native traffic peaks exceed the inherited startup floors: those floors are
+not proven safe bounds for saturated SOCKS traffic. No speculative global
+floor adjustment or device-model exception is made from amd64 measurements.
+Final head checks are available on [Draft PR #21](https://github.com/saymer-alt/proxy-turn-vk-android/pull/21/checks).
+
 ## Memory admission and owner decision
 
 | Profile | Effective workers | Unchanged minimum MemAvailable KiB |
@@ -194,7 +253,7 @@ failed session readiness; a retry passed. No failed run is counted as a pass.
 | Anonymous partial second group | 16 | 147456 |
 | Anonymous two hashes | 18 | 155648 |
 
-These inherited conservative floors are **not newly validated peak bounds**.
+These inherited floors are **not newly validated peak bounds**.
 Import/runtime min−1/min tests enforce equality; unavailable RAM and invalid
 metadata deny launch. The shell advice `MemAvailable >=85000` is wrong for
 these profiles and must not be used. This task updates instructions here,
@@ -265,7 +324,11 @@ admission decisions from other projects are not changed here.
    Use explicitly owner-selected SOCKS-only TCP, UDP and DNS targets; no direct
    fallback and no global default route. Check handshake **and transferred
    bytes**, delayed TCP FIN, UDP churn and fourth/fifth association behavior.
-5. Stop if MemAvailable crosses the admitted floor, memory/IO pressure or
+5. Before starting, agree an independent post-start free-memory reserve and
+   abort rules on the disposable bench; no such hardware reserve is qualified
+   by this PR. The startup floor is a budget check, not a continuously reserved
+   amount that can be reused as that threshold. If no reserve is agreed, do not
+   start. Stop if remaining MemAvailable crosses that reserve, memory/IO pressure or
    swap-in/out grows persistently, OOM occurs, unrelated services degrade,
    or the owner probe fails. Do not tune the threshold during a failed run.
 6. Observe actual main TIME_LIMIT and exit **75** at 30 min, closed local
@@ -278,7 +341,7 @@ Read-only commands; set `WDTT_PID` to the verified numeric PID (no ps argv):
 
 ```sh
 uname -m
-awk '/^(MemTotal|MemAvailable|SwapTotal|SwapFree):/ {print}' /proc/meminfo
+awk '/^(MemTotal|MemAvailable|MemFree|SwapTotal|SwapFree):/ {print}' /proc/meminfo
 awk '/^(pswpin|pswpout|oom_kill):? / {print}' /proc/vmstat
 for pressure in memory io; do
   [ ! -r "/proc/pressure/$pressure" ] || cat "/proc/pressure/$pressure"
