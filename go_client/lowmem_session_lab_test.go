@@ -74,7 +74,15 @@ func TestLowmemSessionLab(t *testing.T) {
 		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()
 		for {
-			enc.Encode(lowmemMetric(phase.Load().(string), start))
+			metric := lowmemMetric(phase.Load().(string), start)
+			enc.Encode(metric)
+			// Test-only readiness, no shipping telemetry format change. A new
+			// burst must wait for the previous TCP slots to be reclaimed.
+			if os.WriteFile(filepath.Join(dir, "memory-active"), []byte(strconv.FormatInt(metric.SOCKSActive, 10)), 0600) != nil {
+				t.Error("private active-slot sample")
+				cancel()
+				return
+			}
 			select {
 			case <-sampleStop:
 				return

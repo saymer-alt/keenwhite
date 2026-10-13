@@ -24,10 +24,10 @@ def main():
  # Every modified client source has an exact Git blob pin; the remaining
  # Phase4 source equivalence guard below is still enforced unchanged.
  diagnostic_blobs={
-  'tools/check_lowmem_session.py':'f28e6501f320df8f0816e0505fc0bd6654a4a72f',
+  'tools/check_lowmem_session.py':'378d496aaf99d393a5797a996c8390a318ddaa79',
   'go_client/testdata/lowmem-wrap-golden.json':'e69c72022a0a1fb82e14992165126cb9347e0573',
-  'go_client/lowmem_session_lab_test.go':'588faf1fe75cebdea345255d1720dedc75353a36',
-  'go_client/lowmem_lab_test.go':'87405cc665827735321bef4b00a8e10e05270936',
+  'go_client/lowmem_session_lab_test.go':'cc749529a9c947048ad8a830639afa28502304e6',
+  'go_client/lowmem_lab_test.go':'5ff7215bc5103f65dc026655aa2c17c0e56dbe49',
   'go_client/lowmem_regression_test.go':'b691429132852b1640131c6130e9f796f82e65e3',
   'go_client/lowmem_admission.go':'462ffcbfe6ba0b86dc703941c62fd464d64ce831',
   'go_client/obfs.go':'556c316f2ae715bdb583bff6cb5d676891f8b751',

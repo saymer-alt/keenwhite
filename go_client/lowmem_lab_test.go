@@ -24,6 +24,7 @@ import (
 )
 
 type lowmemSample struct {
+	SOCKSActive, TCPActive, UDPActive                            int64
 	Phase                                                        string `json:"phase"`
 	ElapsedMS                                                    int64  `json:"elapsed_ms"`
 	RSS, HWM, Swap, Available                                    uint64
@@ -37,6 +38,9 @@ func lowmemMetric(phase string, start time.Time) lowmemSample {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 	s := lowmemSample{Phase: phase, ElapsedMS: time.Since(start).Milliseconds(), HeapAlloc: m.HeapAlloc, HeapInuse: m.HeapInuse, HeapSys: m.HeapSys, StackInuse: m.StackInuse, TotalAlloc: m.TotalAlloc, NumGC: uint64(m.NumGC), Goroutines: runtime.NumGoroutine()}
+	s.SOCKSActive = wdttTelemetry.socksActive.Load()
+	s.TCPActive = wdttLife.tcpActive.Load()
+	s.UDPActive = wdttTelemetry.udpAssocActive.Load()
 	read := func(path, key string) uint64 {
 		b, _ := os.ReadFile(path)
 		for _, line := range strings.Split(string(b), "\n") {

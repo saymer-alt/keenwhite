@@ -29,7 +29,7 @@ def main():
  p=argparse.ArgumentParser()
  for n in ['harness','client-test','report','samples']:p.add_argument('--'+n,required=True)
  p.add_argument('--workers',type=int,choices=[9,18],required=True);p.add_argument('--soak',action='store_true');a=p.parse_args()
- result={'passed':False,'scope':'native test process, real 9/18 RunSession TURN/DTLS/WG/SOCKS; synthetic credential provider, no VK or hardware','workers':a.workers,'soak':a.soak,'bulk_bytes':0,'udp_payload_bytes':0,'latency_seconds':[]}
+ result={'passed':False,'scope':'native test process, real 9/18 RunSession TURN/DTLS/WG/SOCKS; synthetic credential provider, no VK or hardware','workers':a.workers,'soak':a.soak,'bulk_bytes':0,'udp_payload_bytes':0,'latency_seconds':[],'drain_wait_seconds':[]}
  children=[];controls=[];sockets=[];stage='server_start';rounds=0;began=time.monotonic()
  with tempfile.TemporaryDirectory(prefix='wdtt-memory-session-') as temp:
   d=pathlib.Path(temp);d.chmod(0o700)
@@ -43,6 +43,12 @@ def main():
     control,port=udp_assoc();controls.append((control,port));udp=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);udp.bind(('127.0.0.1',0));udp.settimeout(10);sockets.append(udp)
    began=time.monotonic();rounds=0
    while True:
+    stage='previous_tcp_slot_drain';drain_start=time.monotonic()
+    def drained():
+     try:return int((d/'memory-active').read_text())==len(controls)
+     except (OSError,ValueError):return False
+    wait_until(drained,children,10)
+    result['drain_wait_seconds'].append(time.monotonic()-drain_start)
     (d/'memory-command').write_text('load\n')
     started=time.monotonic();stage='tcp_bulk'
     with concurrent.futures.ThreadPoolExecutor(max_workers=28) as pool:times=list(pool.map(bulk,range(28)))

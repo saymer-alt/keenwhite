@@ -33,6 +33,10 @@ Mihomo, production route, release or main/stable change is authorized here.
   No pprof server or profiling option exists in the shipping executable.
   CI exports only numeric JSON/JSONL/benchmarks, never profiles, configs, IPK
   or executable artifacts. Normal tests skip the opt-in memory harnesses.
+- `lowmem/measured-runtime.json` binds the measured candidate runtime files by
+  SHA256 and confirms equality to the PR after canonical gofmt formatting.
+  Local test ELF fingerprints are precommit test-executable evidence, not
+  shipping-client checksums; CI independently builds from its exact source head.
 
 Reproduction with the pinned SDK's `go` executable and a fresh work directory:
 
@@ -140,6 +144,28 @@ sessions on stop. **The component RSS reduction does not establish an E2E peak
 reduction.** Less allocation can defer GC while netstack traffic allocations
 remain live; this is a hypothesis, not a measured root-cause attribution.
 No MemAvailable safety margin is reduced on these results.
+Those twelve runs used the initial immediate-burst harness. First CI run
+`38393947532` passed tests/race/QEMU/observer checks but failed on candidate
+18-workers repetition 2, third burst, with ConnectionResetError. It is kept
+as a failed result, not silently retried. Existing Entware acceptance run
+`38393947466` passed. The updated bounded-load harness now samples actual
+active SOCKS slots in a **test-only** private file and waits (maximum 10 s)
+for previous TCP slots to drain to the four held UDP controls before the next
+28-flow burst. This avoids inadvertently exceeding the unchanged 32-slot cap;
+it does not increase the cap, retry failed transfers or prove the old reset's
+root cause. Drain waits and active counts are numeric evidence. Hardware
+application churn above the cap remains an explicit limitation.
+
+Separate one-pair allocation-profile runs (excluded from the RSS table) sampled
+1053.92 MiB total allocations before versus 935.72 MiB after. Baseline WRAP
+accounted for about 54.57 MiB flat; it is absent from the candidate's top nodes
+above 4.68 MiB. gVisor buffer allocation accounted for about 200.17/174.33 MiB;
+DTLS ApplicationData.Marshal 104.14/107.14 MiB. Those sampled totals are
+traffic/GC-dependent and not a repeatable peak-RSS improvement claim.
+In-use profiles at cleanup attributed about 28/27 MiB to WireGuard message
+buffer pools. Such profiles reflect the runtime's sampled heap/recent GC,
+**not instantaneous peak or fully reclaimed post-GC memory**. This supports
+further investigation of dependency/queue retention, without changing it here.
 
 ### 30-minute local soak
 
@@ -173,6 +199,11 @@ Import/runtime min−1/min tests enforce equality; unavailable RAM and invalid
 metadata deny launch. The shell advice `MemAvailable >=85000` is wrong for
 these profiles and must not be used. This task updates instructions here,
 not KAS preflight or production integration.
+The existing `qMemory()` preference for MemAvailable is retained; kernels
+without that field use the existing conservative MemFree fallback, never swap
+capacity or a hardcoded router-model allowance. Unreadable/unknown memory
+returns zero and is denied. Neither floor is a continuously enforced runtime
+reservation: after admission the owner must still watch concurrent workloads.
 
 Owner's office KN-1012 SE: MemTotal 497676 KiB, Mihomo RSS about 112176 KiB,
 stable MemAvailable 123992 KiB after owner removal of Netdata. Nine workers
@@ -198,7 +229,9 @@ admission decisions from other projects are not changed here.
   version exited during concurrent status updates. Existing labWrite validates
   the old inode before atomic replacement; concurrent writers can invalidate
   that inode between checks. This is an independent fail-closed diagnostic
-  hazard, not relaxed/fixed here and not evidence of a transport memory leak.
+  hazard hypothesis from source inspection; that failure was not instrumented
+  to prove its exact cause. It is not relaxed/fixed here or treated as evidence
+  of a transport memory leak.
   Existing status/telemetry tests and the real-session fixture remain enabled.
 - ARM64 and MIPSel softfloat test executables run new tests under QEMU;
   source-only CI also retains existing independent ELF/IPK sandbox rebuild,

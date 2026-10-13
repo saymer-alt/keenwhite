@@ -69,7 +69,7 @@ jobs:
           sha256sum "$RUNNER_TEMP"/lowmem-*.test
       - name: Paired native memory and real loopback TURN/DTLS/WG/SOCKS lab
         run: |
-          sudo --preserve-env=GOPATH,GOCACHE python3 tools/check_lowmem_lab.py --go "$GO_BIN" --work "$RUNNER_TEMP/lowmem-private" --report-dir "$RUNNER_TEMP/lowmem-evidence" --sessions
+          sudo --preserve-env=GOPATH,GOCACHE env GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$PWD" python3 tools/check_lowmem_lab.py --go "$GO_BIN" --work "$RUNNER_TEMP/lowmem-private" --report-dir "$RUNNER_TEMP/lowmem-evidence" --sessions
       - name: Numeric evidence only; never heap, binary or private configuration
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
