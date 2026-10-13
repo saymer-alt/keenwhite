@@ -17,7 +17,7 @@ def main():
  env={**os.environ,'GOENV':'off','GOTOOLCHAIN':'local','GOWORK':'off','GOTELEMETRY':'off','CGO_ENABLED':'0','GOOS':'linux','GOARCH':'amd64','GOMAXPROCS':'2'}
  env.pop('GOROOT',None)
  head=run(['git','-C',ROOT,'rev-parse','HEAD']).strip()
- assert not run(['git','-C',ROOT,'status','--porcelain']).strip(),'commit all measured sources first'
+ assert not run(['git','-C',ROOT,'status','--porcelain','--','go_client','hardened-relay','tools']).strip(),'commit all measured runtime/harness sources first'
  baseline=work/'baseline'
  with tarfile.open(fileobj=io.BytesIO(subprocess.check_output(['git','-C',ROOT,'archive',BASE]))) as archive:archive.extractall(baseline,filter='data')
  test=(ROOT/'go_client/packet_pipe_pressure_test.go').read_text()
