@@ -165,6 +165,11 @@ func (p *boundedPacketPipe) SetDeadline(t time.Time) error {
 	p.SetWriteDeadline(t)
 	return nil
 }
-func (p *boundedPacketPipe) LocalAddr() net.Addr { return &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)} }
+
+type packetPipeAddr struct{}
+
+func (packetPipeAddr) Network() string           { return "udp" }
+func (packetPipeAddr) String() string            { return "127.0.0.1:0" }
+func (p *boundedPacketPipe) LocalAddr() net.Addr { return packetPipeAddr{} }
 
 var _ net.PacketConn = (*boundedPacketPipe)(nil)

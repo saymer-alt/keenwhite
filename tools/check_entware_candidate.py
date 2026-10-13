@@ -27,7 +27,7 @@ def main():
   'go_client/packet_pipe_transport_test.go':'5bb8c6e4c87d6b90c6fab19b0619ed24b3a165ed',
   'go_client/packet_pipe_pressure_test.go':'72ab25caa99fdcc124e8a322558b77671aa1fa18',
   'go_client/packet_pipe_test.go':'de68eca2b17a57dc17438db096fb6b51c4ff6fda',
-  'go_client/packet_pipe.go':'a7506d2d100d8d94cf8c16c6e78393c9ef74558c',
+  'go_client/packet_pipe.go':'38fdbc4bf610d9a91ce9349fc6b74d95399af42b',
   'tools/check_lowmem_session.py':'82d05f5e22517ccfd0569fe44ed320c6174402a7',
   'go_client/testdata/lowmem-wrap-golden.json':'e69c72022a0a1fb82e14992165126cb9347e0573',
   'go_client/lowmem_session_lab_test.go':'cc749529a9c947048ad8a830639afa28502304e6',
