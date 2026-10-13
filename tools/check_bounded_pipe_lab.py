@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Numeric A/B against immutable PR21; isolated namespaces, no published binaries."""
-import argparse, hashlib, io, json, os, pathlib, resource, subprocess, tarfile, sys, tempfile, time
+import argparse, hashlib, io, json, os, pathlib, resource, statistics, subprocess, tarfile, sys, tempfile, time
 sys.dont_write_bytecode = True
 from check_lowmem_lab import summarize
 ROOT=pathlib.Path(__file__).resolve().parents[1]
@@ -51,6 +51,15 @@ def main():
    run(['unshare','-n','sh','-ec','ip link set lo up; exec "$@"','lab',*prefix,'python3',ROOT/'tools/check_lowmem_session.py','--harness',work/'server.test','--client-test',work/(variant+'.test'),'--workers',workers,'--hold-seconds','90','--slow-read-ms','20','--report',out/(stem+'-report.json'),'--samples',out/(stem+'-samples.jsonl')],env=env)
    result['long_sessions'][stem]=summarize(out/(stem+'-samples.jsonl'))
    (out/'comparison.json').write_text(json.dumps(result,indent=2)+'\n')
+ # Numeric log fallback if artifact service/permissions fail after measurements.
+ summary={'baseline':BASE,'candidate':head,'workers':{}}
+ for workers in [9,18]:
+  row={}
+  for variant in ['baseline','candidate']:
+   row[variant+'_pressure_hwm_kib']=[max(x['HWM'] for x in result['pressure'][f'{variant}-{workers}-{n}']['phases'].values()) for n in range(1,a.repetitions+1)]
+   row[variant+'_full_hwm_kib']=[result['sessions'][f'{variant}-{workers}-{n}']['hwm_kib'] for n in range(1,a.repetitions+1)]
+  summary['workers'][workers]=row
+ print('NUMERIC_COMPARISON '+json.dumps(summary,sort_keys=True))
  print('PASS immutable PR21 paired 9/18 pressure and TCP/UDP runs')
 def transport_child(work):
  from check_socks_udp_pair import wait_until
