@@ -25,7 +25,8 @@ type packetQueue struct {
 	offset, used, first, count int
 	closed                     bool
 	rd, wd                     time.Time
-	rt, wt                     *time.Timer
+	timer                      *time.Timer
+	timerActive                bool
 }
 
 type boundedPacketPipe struct{ read, write *packetQueue }
@@ -103,11 +104,8 @@ func (q *packetQueue) close() {
 	q.closed = true
 	q.count = 0
 	q.used = 0
-	if q.rt != nil {
-		q.rt.Stop()
-	}
-	if q.wt != nil {
-		q.wt.Stop()
+	if q.timer != nil && q.timer.Stop() {
+		q.timerActive = false
 	}
 	q.cond.Broadcast()
 }
@@ -115,21 +113,47 @@ func (p *boundedPacketPipe) Close() error { p.read.close(); p.write.close(); ret
 func (q *packetQueue) deadline(t time.Time, read bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	timer := &q.wt
 	if read {
 		q.rd = t
-		timer = &q.rt
 	} else {
 		q.wd = t
 	}
-	if *timer != nil {
-		(*timer).Stop()
-		*timer = nil
+	if q.timer != nil && q.timer.Stop() {
+		q.timerActive = false
 	}
-	if !q.closed && !t.IsZero() && time.Until(t) > 0 {
-		*timer = time.AfterFunc(time.Until(t), func() { q.mu.Lock(); q.cond.Broadcast(); q.mu.Unlock() })
-	}
+	// If Stop failed, the sole callback is pending/running. It will rearm
+	// from the latest deadlines under this same lock; do not spawn another.
+	q.armTimer()
 	q.cond.Broadcast()
+}
+
+// Called with mu held. Ignore expired deadlines: waiters already observe them.
+func (q *packetQueue) armTimer() {
+	if q.closed || q.timerActive {
+		return
+	}
+	now := time.Now()
+	var next time.Time
+	for _, d := range []time.Time{q.rd, q.wd} {
+		if d.After(now) && (next.IsZero() || d.Before(next)) {
+			next = d
+		}
+	}
+	if next.IsZero() {
+		return
+	}
+	q.timerActive = true
+	if q.timer == nil {
+		q.timer = time.AfterFunc(time.Until(next), func() {
+			q.mu.Lock()
+			defer q.mu.Unlock()
+			q.timerActive = false
+			q.cond.Broadcast()
+			q.armTimer()
+		})
+	} else {
+		q.timer.Reset(time.Until(next))
+	}
 }
 func (p *boundedPacketPipe) SetReadDeadline(t time.Time) error { p.read.deadline(t, true); return nil }
 func (p *boundedPacketPipe) SetWriteDeadline(t time.Time) error {

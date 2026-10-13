@@ -149,7 +149,8 @@ func RunSession(
 		}
 		return false, fmt.Errorf("TURN Allocate: %w", err)
 	}
-	defer relay.Close()
+	closeRelay := sync.OnceFunc(func() { _ = relay.Close() })
+	defer closeRelay()
 
 	// Reset error count on successful allocation
 	getStreamCache(creds.CacheStreamID).errorCount.Store(0)
@@ -194,13 +195,13 @@ func RunSession(
 	}
 
 	stopRelay := context.AfterFunc(sessCtx, func() {
-		_ = relay.Close()
+		closeRelay()
 		_ = pipeA.Close()
 	})
 	defer func() {
 		sessCancel()
 		_ = pipeA.Close()
-		_ = relay.Close()
+		closeRelay()
 		stopRelay()
 		relayWg.Wait()
 		sessionWg.Wait()
@@ -538,7 +539,8 @@ func RunPing(
 	if err != nil {
 		return 0, err
 	}
-	defer relay.Close()
+	closeRelay := sync.OnceFunc(func() { _ = relay.Close() })
+	defer closeRelay()
 
 	pipeA, pipeB := newBoundedPacketPipe()
 	defer pipeA.Close()
@@ -550,13 +552,13 @@ func RunPing(
 	var relayWg sync.WaitGroup
 	relayWg.Add(2)
 	stopRelay := context.AfterFunc(sessCtx, func() {
-		_ = relay.Close()
+		closeRelay()
 		_ = pipeA.Close()
 	})
 	defer func() {
 		sessCancel()
 		_ = pipeA.Close()
-		_ = relay.Close()
+		closeRelay()
 		stopRelay()
 		relayWg.Wait()
 	}()

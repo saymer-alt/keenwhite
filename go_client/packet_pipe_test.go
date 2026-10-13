@@ -193,7 +193,6 @@ func TestLimitedPipeZeroPacketReproducer(t *testing.T) {
 	a, b := connutil.LimitedAsyncPacketPipe(1600)
 	defer a.Close()
 	defer b.Close()
-	a.SetWriteDeadline(time.Now().Add(time.Second))
 	for i := 0; i < 100000; i++ {
 		if _, err := a.Write(nil); err != nil {
 			t.Fatalf("packet %d: %v", i, err)

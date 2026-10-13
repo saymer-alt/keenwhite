@@ -24,10 +24,11 @@ def main():
  # Every modified client source has an exact Git blob pin; the remaining
  # Phase4 source equivalence guard below is still enforced unchanged.
  diagnostic_blobs={
-  'go_client/packet_pipe_pressure_test.go':'4c510801abe556987142443e86233a006b1a18fa',
-  'go_client/packet_pipe_test.go':'aa7ea612a30243b581c813a42c2ad3b50c6c411e',
-  'go_client/packet_pipe.go':'c8093a557dd257d39063b73f4c556b19577ca3c5',
-  'tools/check_lowmem_session.py':'378d496aaf99d393a5797a996c8390a318ddaa79',
+  'go_client/packet_pipe_transport_test.go':'5bb8c6e4c87d6b90c6fab19b0619ed24b3a165ed',
+  'go_client/packet_pipe_pressure_test.go':'72ab25caa99fdcc124e8a322558b77671aa1fa18',
+  'go_client/packet_pipe_test.go':'de68eca2b17a57dc17438db096fb6b51c4ff6fda',
+  'go_client/packet_pipe.go':'a7506d2d100d8d94cf8c16c6e78393c9ef74558c',
+  'tools/check_lowmem_session.py':'82d05f5e22517ccfd0569fe44ed320c6174402a7',
   'go_client/testdata/lowmem-wrap-golden.json':'e69c72022a0a1fb82e14992165126cb9347e0573',
   'go_client/lowmem_session_lab_test.go':'cc749529a9c947048ad8a830639afa28502304e6',
   'go_client/lowmem_lab_test.go':'5ff7215bc5103f65dc026655aa2c17c0e56dbe49',
@@ -36,7 +37,7 @@ def main():
   'go_client/obfs.go':'556c316f2ae715bdb583bff6cb5d676891f8b751',
   'go_client/main.go':'2e553d4ca3ab97c7876b8f31b68bee79cff9791d',
   'go_client/lab_security.go':'ab580beb0b1b1cf5ca5a44156a6fdf1f228853be',
-  'go_client/session.go':'dde7003ae68d4752fd9885ed22cfd7dd39a782fc',
+  'go_client/session.go':'55e2fb4b6357071d7ed10b546efca51384238eec',
   'go_client/lab_getconf_status_test.go':'53e1fc751237d11555c1b64506a643bba0e956a5',
   'go_client/socks5.go':'83dd16836debb08a58a8452e090a49d9b130acf8',
   'go_client/lab_socks_mode_test.go':'70e555096897d2b672b3d9e39828cc64088a6311',

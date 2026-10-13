@@ -32,10 +32,13 @@ drain is promised after cancellation. The fixed max write is 65536 bytes, above
 the legal UDP payload limit and existing 1600/1680 relay read buffers. No wire
 framing, cipher, DTLS MTU or SOCKS limits change.
 
-Each queue has at most one active read and one active write deadline timer;
-setters stop the previous timer, callbacks lock the condition mutex, Close stops
-timers. Wait loops recheck deadline/closed state on every wakeup. No timer is
-created by entering a wait. Concurrent operations share the bounded rings.
+Each queue has one reusable timer for the earliest future read/write deadline.
+When Stop reports a pending callback, setters leave rearming to that callback
+under the mutex rather than spawning another timer. Close stops the timer;
+wait loops recheck deadline/closed state on every wakeup. No timer is created by
+entering a wait. Concurrent operations share the bounded rings. Relay Close is
+guarded by sync.OnceFunc because the TURN dependency does not serialize its
+close-channel check and close against concurrent callers.
 
 RunSession and RunPing use the same implementation. Context cancellation closes
 relay and pipe, early returns join relay pumps (and session keepalive), and errors
@@ -78,7 +81,12 @@ is configured; no production endpoint, host route/firewall or VK credentials.
 - ARM64 and MIPSel softfloat QEMU: PASS locally; ELF and SHA256 recorded separately.
 - Paired numeric memory and full transport: running; numerical results will be
   added after completion. No allocator-only memory qualification claimed.
-- Entware acceptance and independent CI: pending this exact candidate.
+- First independent Entware acceptance passed at bfcccc1. First memory CI failed
+  in the unchanged 120-ms SOCKS relay progress race test. The initial dependency
+  reproducer set a deadline and thus created 100000 dependency timers even on
+  nonblocking writes; that unnecessary deadline was removed to avoid test-suite
+  interference. The failed run is retained, not treated as passing evidence.
+- Final independent CI/Entware acceptance and paired long/slow tests pending.
 - Shipping 30-minute emergency exit 75, RAM floors, SOCKS 32/64 and UDP 4 caps,
   protocol/WRAP goldens are retained. Short lab tests do not prove real 30-minute
   hardware cutoff or hardware ABI/resources.
