@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Numeric A/B against immutable PR21; isolated namespaces, no published binaries."""
-import argparse, hashlib, io, json, os, pathlib, shutil, statistics, subprocess, tarfile
+import argparse, hashlib, io, json, os, pathlib, shutil, statistics, subprocess, tarfile, sys
+sys.dont_write_bytecode = True
 from check_lowmem_lab import summarize
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 BASE='f04bdbc101c8f9f86c2cc6a1cc512e9d2373504c'
