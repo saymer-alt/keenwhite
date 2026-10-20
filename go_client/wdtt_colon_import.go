@@ -18,6 +18,7 @@ package main
 // not VK TURN credentials, live workers or TCP/UDP egress.
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -32,7 +33,7 @@ import (
 func wdttColonParse(raw []byte, o qOptions, availableKiB int64) (labConfig, string, error) {
 	var empty labConfig
 	fail := func(code string) (labConfig, string, error) {
-		return empty, "", qError("WDTT_COLON_"+code)
+		return empty, "", errors.New("WDTT_COLON_"+code)
 	}
 	if len(raw) >= 2 && string(raw[len(raw)-2:]) == "\r\n" {
 		raw = raw[:len(raw)-2]
@@ -84,6 +85,11 @@ func wdttColonParse(raw []byte, o qOptions, availableKiB int64) (labConfig, stri
 	localPort, err := qNumber(parts[3], 65535)
 	if err != nil {
 		return fail("LOCAL_PORT_INVALID")
+	}
+	// This initial colon implementation is owner-lab anonymous only.
+	// Do not infer VK account credentials from a share link.
+	if o.Auth != "anonymous" {
+		return fail("ANONYMOUS_ONLY")
 	}
 	// No silent default. Classic clients commonly choose 16, but a public
 	// link carries NO worker count. Require explicit operator decision.
