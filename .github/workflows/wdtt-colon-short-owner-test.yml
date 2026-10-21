@@ -1,7 +1,7 @@
 name: WDTT classic short password guarded opt-in (owner-only)
 on:
   pull_request:
-    branches: [feature/qwdtt-anon18-singlehash-owner-20261021]
+    branches: [feature/wdtt-colon-private-import-owner-20261021]
   workflow_dispatch:
 permissions:
   contents: read
