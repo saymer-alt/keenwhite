@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,15 +38,18 @@ func TestWDTTLegacyShortPassOwnerOptInAndWRAP(t *testing.T) {
 			}
 			// The ordinary qWDTT link importer NEVER enables the policy even
 			// for otherwise identical syntactically supported workgroups.
-			qURI := qURI("18", "oneHash")
-			qURI = strings.Replace(qURI, "syntheticSecretForTesting123", pass, 1)
+			baseURI, parseErr := url.Parse(qURI("18", "oneHash"))
+			if parseErr != nil {
+				t.Fatal(parseErr)
+			}
+			values := baseURI.Query()
+			values.Set("pass", pass)
+			baseURI.RawQuery = values.Encode()
 			normalOpts := qAnonOpts()
 			normalOpts.MaxWorkers = 18
-			// qParse directly with flag unset must reject a short password.
-			if strings.Contains(qURI, pass) {
-				if _, _, err := qParse([]byte(qURI), normalOpts, 200000); err == nil {
-					t.Fatal("ordinary qWDTT path accepted short password")
-				}
+			// Ordinary qWDTT's private importer never sets opt-in.
+			if _, _, err := qParse([]byte(baseURI.String()), normalOpts, 200000); err == nil {
+				t.Fatal("ordinary qWDTT path accepted short password")
 			}
 			broken := got
 			broken.WDTTLegacyShortPassword = false
