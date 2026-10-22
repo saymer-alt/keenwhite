@@ -63,6 +63,13 @@ func (p *MockProcess) Done() <-chan struct{} { return p.done }
 // ExitErr returns the exit error.
 func (p *MockProcess) ExitErr() error { return p.exitErr }
 
+// SetIgnoreSignals scripts the process to ignore SIGTERM (hung scenario).
+func (p *MockProcess) SetIgnoreSignals() {
+	p.mu.Lock()
+	p.ignoresSig = true
+	p.mu.Unlock()
+}
+
 // Crash simulates a non-zero exit (scenario: process failure).
 func (p *MockProcess) Crash() {
 	p.mu.Lock()
