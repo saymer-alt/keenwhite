@@ -1,0 +1,134 @@
+--- a/server.go
++++ b/server.go
+@@ -1882,7 +1882,7 @@
+ 
+ // ==================== Main ====================
+ 
+-func main() {
++func disabledUpstreamMain() {
+ 	listen := flag.String("listen", "0.0.0.0:56000", "DTLS адрес")
+ 	wgPort := flag.Int("wg-port", defaultInternalWGPort, "WireGuard UDP порт")
+ 	configDir := flag.String("config-dir", "/etc/wdtt", "директория конфигурации")
+@@ -2014,6 +2014,7 @@
+ 	atomic.AddInt64(&totalConns, 1)
+ 
+ 	var connDeviceID string
++	var authPassword string
+ 	authenticated := false
+ 
+ 	dtlsConn, ok := clientConn.(*dtls.Conn)
+@@ -2045,6 +2046,7 @@
+ 
+ 	if strings.HasPrefix(firstStr, "GETCONF:") {
+ 		parts := strings.Split(strings.TrimSpace(strings.TrimPrefix(firstStr, "GETCONF:")), "|")
++		if !serverRequestValid(parts) { return }
+ 		clientPort := "9000"
+ 		deviceID := "unknown"
+ 		password := ""
+@@ -2061,16 +2063,15 @@
+ 		dbMutex.Lock()
+ 
+ 		// Проверяем пароль
+-		isMainPass := password != "" && password == db.MainPassword
+ 		entry, isGenPass := db.Passwords[password]
+-		valid := isMainPass || (isGenPass && !isPasswordExpired(entry))
++		valid := serverAuthorizedLocked(password, deviceID)
+ 
+ 		// Для сгенерированных паролей — проверяем привязку к устройству
+ 		if valid && isGenPass && entry.IsDeactivated {
+ 			clientConn.Write([]byte("DENIED:deactivated"))
+ 			log.Printf("[WG] Отказ: пароль %s деактивирован, запрос от %s", maskPassword(password), deviceID)
+ 			dbMutex.Unlock()
+-		} else if valid && isGenPass && !entry.canConnectAndBind(deviceID) {
++		} else if valid && isGenPass && !serverAuthorizedLocked(password, deviceID) {
+ 			// Достигнут лимит устройств или привязано к другому устройству
+ 			clientConn.Write([]byte("DENIED:device_mismatch"))
+ 			log.Printf("[WG] Отказ: пароль %s достиг лимита устройств (%d), запрос от %s", maskPassword(password), entry.MaxDevices, deviceID)
+@@ -2078,26 +2079,11 @@
+ 		} else if valid {
+ 			connDeviceID = deviceID
+ 			authenticated = true
+-
+-			// Сохраняем БД, так как canConnectAndBind мог внести привязку нового устройства
+-			if isGenPass {
+-				saveDB()
+-			}
+-
+-			dev, exists := db.Devices[deviceID]
+-			if !exists {
+-				dev = &ClientDevice{DeviceID: deviceID, IP: getNextIP()}
+-				privB64, pubB64, keyErr := generateKeyPair()
+-				if keyErr == nil && dev.IP != "" {
+-					dev.PrivKey = privB64
+-					dev.PubKey = pubB64
+-					db.Devices[deviceID] = dev
+-					saveDB()
+-					log.Printf("[WG] Новое устройство %s (IP: %s)", deviceID, dev.IP)
+-				} else {
+-					dev = nil
+-				}
+-			}
++			authPassword = password
++
++			// Pre-provisioned only; never persist secrets or mutate bindings here.
++
++			dev := db.Devices[deviceID]
+ 			if dev != nil {
+ 				upsertPeerInWG(wgDev, dev)
+ 				clientConn.Write([]byte(buildClientConfig(keys.serverPublic, dev.PrivKey, dev.IP, clientPort)))
+@@ -2140,21 +2126,8 @@
+ 			password = parts[1]
+ 		}
+ 		dbMutex.Lock()
+-		_, knownDevice := db.Devices[deviceID]
+-		if knownDevice && password != "" {
+-			if password == db.MainPassword {
+-				authenticated = true
+-			} else if entry, ok := db.Passwords[password]; ok && !entry.IsDeactivated && !isPasswordExpired(entry) {
+-				for _, id := range entry.DeviceIDs {
+-					if id == deviceID {
+-						authenticated = true
+-					}
+-				}
+-				if entry.DeviceID == deviceID {
+-					authenticated = true
+-				}
+-			}
+-		}
++		authenticated = len(parts) == 2 && serverAuthorizedLocked(password, deviceID)
++		authPassword = password
+ 		dbMutex.Unlock()
+ 		if !authenticated {
+ 			return
+@@ -2185,6 +2158,7 @@
+ 	if !authenticated {
+ 		return
+ 	}
++	if !serverAuthorized(authPassword, connDeviceID) { return }
+ 	// WG прокси
+ 	wgConn, err := net.Dial("udp", wgEndpoint)
+ 	if err != nil {
+@@ -2219,6 +2193,7 @@
+ 
+ 	pctx, pcancel := context.WithCancel(ctx)
+ 	defer pcancel()
++	go serverWatchAuthorization(pctx, pcancel, clientConn, authPassword, connDeviceID)
+ 
+ 	context.AfterFunc(pctx, func() {
+ 		clientConn.SetDeadline(time.Now())
+@@ -2245,6 +2220,7 @@
+ 			if err != nil {
+ 				return
+ 			}
++			if !serverAuthorized(authPassword, connDeviceID) { return }
+ 			// Skip DTLS keepalive packets (1-byte 0xFF ping from client)
+ 			if nn == 1 && (*b)[0] == 0xFF {
+ 				continue
+@@ -2281,6 +2257,7 @@
+ 				}
+ 				return
+ 			}
++			if !serverAuthorized(authPassword, connDeviceID) { return }
+ 			atomic.AddInt64(&totalBytesToClient, int64(nn))
+ 			// Учёт трафика теперь происходит через IpcGet()
+ 
