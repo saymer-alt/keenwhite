@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/saymer-alt/keenwhite/internal/provider"
@@ -26,17 +27,24 @@ type scenarioEnv struct {
 // stepClock advances only when the scenario tells it to (scenario 13 uses
 // this to pass the 30-minute hard stop without real waiting).
 type stepClock struct {
+	mu  sync.Mutex
 	now time.Time
 }
 
-func (c *stepClock) Now() time.Time { return c.now }
+func (c *stepClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
 func (c *stepClock) Advance(d time.Duration) {
 	for _, sub := range splitDuration(d) {
+		c.mu.Lock()
 		c.now = c.now.Add(sub)
+		c.mu.Unlock()
 	}
 }
 func (c *stepClock) After(d time.Duration) <-chan time.Time {
-	deadline := c.now.Add(d)
+	deadline := c.Now().Add(d)
 	ch := make(chan time.Time, 1)
 	go func() {
 		for c.Now().Before(deadline) {
