@@ -95,15 +95,18 @@ func TestBindRulesNegative(t *testing.T) {
 }
 
 func TestE2EWithoutMeasurementRejected(t *testing.T) {
+	// Fail-closed is sequential: the URL gate fires first...
 	m := validManifest()
 	m.Socks.TCP = EvidenceE2EVerified
 	problems := ValidateManifest(m)
-	fields := map[string]bool{}
-	for _, p := range problems {
-		fields[p.Field] = true
+	if len(problems) == 0 || problems[0].Field != "evidence.evidence_url" {
+		t.Fatalf("E2E without url must fail the URL gate first, got %+v", problems)
 	}
-	if !fields["evidence.evidence_url"] || !fields["evidence.measured_at"] {
-		t.Fatalf("E2E without url/measured_at must fail both checks, got %+v", problems)
+	// ...and once the URL exists, the missing measurement gate fires.
+	m.Evidence.EvidenceURL = "https://example.invalid/e2e"
+	problems = ValidateManifest(m)
+	if len(problems) == 0 || problems[0].Field != "evidence.measured_at" {
+		t.Fatalf("E2E without measured_at must fail the date gate, got %+v", problems)
 	}
 }
 
