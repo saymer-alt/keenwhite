@@ -1,7 +1,11 @@
-# Transport modules (planned)
+# KeenWhite transport source modules
 
-KeenWhite starts as an original first-party manager. The first in-tree transport module will be **WDTT** under `transports/wdtt/` after a controlled, *non-squashed Git subtree import* from the pinned WDTT Suite owner-lab PR #42 commit. On `main` there is **no WDTT source yet**; the import is prepared and gated in Draft [PR #1](https://github.com/saymer-alt/keenwhite/pull/1) (pinned `d39f9dad9163`, full ancestry, GPL-3.0 preserved) and merges only after owner acceptance.
+The first independent in-tree source module is [WDTT](wdtt/) — GPL-3.0 source imported from [WDTT Suite](https://github.com/saymer-alt/wdtt-suite) combined experimental owner-lab PR #42 at `d39f9dad91639a0f1ca321df72f3dc51ff0b0af0`.
 
-Import procedure and safety gate: [MIGRATION-PLAN.md](../docs/migration/MIGRATION-PLAN.md). Import provenance: [WDTT-SOURCE-LEDGER.md](../docs/migration/WDTT-SOURCE-LEDGER.md).
+- Imported with complete Git ancestry via non-squash [KeenWhite PR #1](https://github.com/saymer-alt/keenwhite/pull/1), main merge `571784f52c420ce0528dfbccbcf3b8c3effbe273`.
+- All 234 original file blob SHAs matched the source; original [GPL-3.0 license](wdtt/LICENSE) and authorship remain.
+- Isolated [WDTT CI](../.github/workflows/wdtt-import-ci.yml) covers three nested Go modules, native/race tests and ARM64/MIPSel synthetic QEMU tests.
+- **Source import and CI are not field readiness**: no owner-approved Keenetic TCP/UDP, RAM/PSI, DNS/egress or fail-closed acceptance. 30-minute owner-lab hard stop remains active. There is no stable release, startup service, or KAS installer integration.
+- Root [KeenWhite CLI](../cmd/keenwhite/) is independently written MIT code; WDTT remains GPL. Never treat the root MIT license as relicensing WDTT.
 
-The module must keep upstream GPL-3.0 notices; the original KeenWhite CLI is MIT. Keep distinct Go modules and process boundaries until license/security/build review is complete. Future OpenFlux, CSQTT and MAX integrations require separate design and license decisions. Do not introduce auto-start or an open SOCKS listener.
+References: [migration ledger](../docs/migration/WDTT-SOURCE-LEDGER.md), [acceptance matrix](../docs/migration/WDTT-CI-ACCEPTANCE.md), KeenWhite [#2](https://github.com/saymer-alt/keenwhite/issues/2) and [#3](https://github.com/saymer-alt/keenwhite/issues/3). Other upstreams remain researched providers, not automatically imported or supported.
