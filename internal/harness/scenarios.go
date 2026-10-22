@@ -2,8 +2,10 @@ package harness
 
 import (
 	"context"
+	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -97,13 +99,16 @@ func scaffold(t testingT) (string, provider.Manifest, []string) {
 	}
 	mk(bin, []byte("placeholder"))
 	mk(profile, []byte(`{"vk_link":"https://vkcall.ru/CANARYLINK","turn_user":"CANARYUSER","turn_pass":"CANARYPASS"}`))
+	// Dynamic loopback port: parallel test packages must never fight over a
+	// fixed port (a fixed 1081 caused a cross-package CI flake).
+	bind := "127.0.0.1:" + freePort(t)
 	manifest := provider.Manifest{
 		ManifestVersion: 1,
 		APIVersion:      provider.APIVersionV1,
 		Provider:        "wdtt",
 		Artifact:        provider.ManifestArtifact{Path: bin, SHA256: strings.Repeat("a", 64), Arch: "arm64"},
 		Profile:         provider.ManifestProfile{Path: profile, RequiredFiles: []string{"client.json"}},
-		Socks:           provider.ManifestSocks{Bind: "127.0.0.1:1081", TCP: provider.EvidenceSourceConfirmed, UDP: provider.EvidenceSourceConfirmed},
+		Socks:           provider.ManifestSocks{Bind: bind, TCP: provider.EvidenceSourceConfirmed, UDP: provider.EvidenceSourceConfirmed},
 		Resources:       provider.ManifestRes{MinMemAvailableMB: 0, KASCombinedMinRAMMB: intPtr(512), AdmissionSource: "KAS-#137-combined-admission-policy"},
 		Lifecycle:       provider.ManifestLife{HardStopSeconds: wdtt.WDTTHardStopSeconds, StopGraceSeconds: 1},
 	}
@@ -115,6 +120,17 @@ func intPtr(i int) *int { return &i }
 // testingT is the minimal scratch-space hook; *H implements it.
 type testingT interface {
 	TempDir() string
+}
+
+// freePort asks the OS for a free loopback port (probe closes immediately;
+// good enough for tests).
+func freePort(t testingT) string {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		panic(err)
+	}
+	defer ln.Close()
+	return strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)
 }
 
 // AllScenarios returns the required task-#10 stage-E scenario set. Every
