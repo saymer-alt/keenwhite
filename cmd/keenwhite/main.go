@@ -27,6 +27,9 @@ func run(args []string) int {
 		usage()
 		return 0
 	}
+	if args[0] == "verify-wdtt" {
+		return runVerifyWDTT(args[1:])
+	}
 	cmd := args[0]
 	if cmd != "validate" && cmd != "providers" && cmd != "doctor" {
 		fmt.Fprintln(os.Stderr, "unknown command:", cmd)
@@ -102,6 +105,7 @@ Usage:
   keenwhite validate  [-catalog path]
   keenwhite providers [-catalog path]
   keenwhite doctor    [-catalog path] [-json]
+  keenwhite verify-wdtt -file PATH -sha256 SHA256 -arch arm64|mipsle [-json]
 
 No command starts a tunnel, edits router settings, or accesses the network.`)
 }
