@@ -1,0 +1,136 @@
+# Independent validation for GPL WDTT subtree; no releases, uploads, secrets, devices.
+name: WDTT imported source CI
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/wdtt-import-ci.yml'
+      - 'transports/wdtt/**'
+    branches:
+      - main
+      - migration/wdtt-pr42-d39f9dad9163
+  push:
+    branches:
+      - ci/wdtt-import-independent-20261022
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: wdtt-import-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  provenance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact revision without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Enforce pinned WDTT ancestry, GPL and laboratory guard
+        shell: bash
+        env:
+          SOURCE_SHA: d39f9dad91639a0f1ca321df72f3dc51ff0b0af0
+        run: |
+          set -euo pipefail
+          test -f transports/wdtt/LICENSE
+          test -f transports/wdtt/go_client/go.mod
+          test -f transports/wdtt/hardened-relay/go.mod
+          git cat-file -e "${SOURCE_SHA}^{commit}"
+          git merge-base --is-ancestor "$SOURCE_SHA" HEAD
+          test "$(git rev-parse "HEAD:transports/wdtt/LICENSE")" = "$(git rev-parse "${SOURCE_SHA}:LICENSE")"
+          grep -Eq 'GNU GENERAL PUBLIC LICENSE' transports/wdtt/LICENSE
+          grep -Fq 'time.Sleep(30 * time.Minute); labStatus("TIME_LIMIT"); os.Exit(75)' transports/wdtt/go_client/lab_security.go
+          grep -Fq 'wdttMemoryMinimum(o.Auth, workers)' transports/wdtt/go_client/qwdtt_import.go
+          {
+            echo "## WDTT source provenance"
+            echo "Pinned source: $SOURCE_SHA"
+            echo "GPL LICENSE blob matches source: PASS"
+            echo "30-minute TIME_LIMIT exit 75 preserved: PASS"
+            echo "No transport installed or started."
+          } >> "$GITHUB_STEP_SUMMARY"
+  native-tests:
+    needs: provenance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ['.', 'go_client', 'hardened-relay']
+    defaults:
+      run:
+        shell: bash
+        working-directory: transports/wdtt
+    env:
+      GOWORK: 'off'
+      GOTOOLCHAIN: 'local'
+      GOTELEMETRY: 'off'
+      GOMAXPROCS: '2'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: false
+      - name: Go vet, short deterministic tests and race detection
+        env:
+          MODULE: ${{ matrix.module }}
+        run: |
+          set -euo pipefail
+          cd "$MODULE"
+          go version
+          go mod download
+          go vet -mod=mod ./...
+          go test -mod=mod -short -count=1 -timeout=300s ./...
+          if [[ "$MODULE" == "go_client" || "$MODULE" == "hardened-relay" ]]; then
+            CGO_ENABLED=1 go test -mod=mod -race -short -count=1 -timeout=300s ./...
+          fi
+          echo "Native offline/synthetic tests passed: $MODULE" >> "$GITHUB_STEP_SUMMARY"
+  arch-qemu:
+    needs: [provenance, native-tests]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      GOWORK: 'off'
+      GOTOOLCHAIN: 'local'
+      GOTELEMETRY: 'off'
+      GOMAXPROCS: '2'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: false
+      - name: Install QEMU only (no devices or server connections)
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qemu-user binutils file
+      - name: Crossbuild exact imported client and run synthetic subset
+        shell: bash
+        working-directory: transports/wdtt/go_client
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/wdtt"
+          export GOOS=linux CGO_ENABLED=0 GOMIPS=softfloat
+          for arch in arm64 mipsle; do
+            GOARCH="$arch" go build -mod=mod -trimpath -buildvcs=false -ldflags='-s -w -buildid=' -o "$RUNNER_TEMP/wdtt/client-$arch" .
+            GOARCH="$arch" go test -mod=mod -trimpath -buildvcs=false -c -o "$RUNNER_TEMP/wdtt/client-$arch.test"
+          done
+          file "$RUNNER_TEMP/wdtt/client-"*
+          readelf -h "$RUNNER_TEMP/wdtt/client-arm64" | grep 'Machine:' | grep -q 'AArch64'
+          readelf -h "$RUNNER_TEMP/wdtt/client-mipsle" | grep 'Machine:' | grep -q 'MIPS'
+          pattern='^Test(WDTTWorkerMeter|WDTTColon|WDTTLegacyShortPass|OwnerQwdtt|RedactStdin|StdinLogLine|VkAccountCreds|ShortLink)'
+          qemu-aarch64 "$RUNNER_TEMP/wdtt/client-arm64.test" -test.run "$pattern" -test.timeout=180s
+          qemu-mipsel "$RUNNER_TEMP/wdtt/client-mipsle.test" -test.run "$pattern" -test.timeout=180s
+          (cd "$RUNNER_TEMP/wdtt" && sha256sum client-arm64 client-mipsle)
+          {
+            echo "## Imported client crossbuild and synthetic QEMU"
+            echo "GOOS=linux, GOARCH=arm64/mipsle, CGO_ENABLED=0"
+            echo "ELF machine check and selected QEMU tests: PASS"
+            echo "No artifact publication, release, transport session or hardware acceptance."
+          } >> "$GITHUB_STEP_SUMMARY"
