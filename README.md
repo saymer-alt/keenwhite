@@ -77,6 +77,7 @@ make crossbuild
 - [Архитектура и границы ответственности](docs/ARCHITECTURE.md)
 - [Первый roadmap](docs/ROADMAP.md)
 - [Реестр upstream-исследований и лицензий](docs/UPSTREAM-SOURCES.md)
+- [Разбор YPtun v3.7.1: WDTT API, TURN, RAW SOCKS5, WDTT Plus](docs/research/YPTUN-WDTT-IMPLEMENTATION-20261022.md) — source-review, без переноса кода
 - [Безопасность и ограничения](SECURITY.md)
 - [Как добавлять код](CONTRIBUTING.md)
 - [Переезд WDTT и объединение разработок](docs/migration/MIGRATION-PLAN.md)
