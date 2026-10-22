@@ -201,3 +201,23 @@ func TestEvidenceAndStatesComplete(t *testing.T) {
 	}
 	_ = fmt.Sprintf // keep fmt imported for future table tests
 }
+
+// R10 (issue #20): a future-dated E2E measurement is corrupt and must be
+// rejected at validation time, before any adapter ever sees it.
+func TestFutureDatedEvidenceRejected(t *testing.T) {
+	m := validManifest()
+	future := time.Now().Add(24 * time.Hour)
+	m.Socks.TCP = EvidenceE2EVerified
+	m.Socks.UDP = EvidenceE2EVerified
+	m.Evidence = ManifestEvid{EvidenceURL: "https://example.invalid/e2e", MeasuredAt: &future}
+	problems := ValidateManifest(m)
+	found := false
+	for _, p := range problems {
+		if p.Field == "evidence.measured_at" && p.Severity == "error" && strings.Contains(p.Message, "future") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("future-dated measurement must be rejected, got %+v", problems)
+	}
+}
