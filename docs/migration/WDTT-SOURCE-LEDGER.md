@@ -1,6 +1,6 @@
 # WDTT → KeenWhite: исходники, эксперименты, текущие контрольные точки
 
-**Состояние: MIGRATION PLANNED, не выполнена.** Инвентаризация источников от 22 октября 2026 года. Исходник ещё остаётся в `saymer-alt/wdtt-suite` (GitHub fork от `hoaxisr/proxy-turn-vk-android`, GPL-3.0). Не трактовать имена веток как завершённые или проверенные возможности.
+**Состояние: SOURCE IMPORTED / FIELD ACCEPTANCE PENDING.** Источник WDTT PR #42 `d39f9dad91639a0f1ca321df72f3dc51ff0b0af0` перенесён с полной Git-историей в KeenWhite `main` через [PR #1](https://github.com/saymer-alt/keenwhite/pull/1), merge commit `571784f52c420ce0528dfbccbcf3b8c3effbe273`. Все 234 исходных Git blob SHA совпадают. Нативные Go/race и ARM64/MIPSel QEMU проверки — PASS. **Физические TCP/UDP, RSS, WAN/DNS fail-closed на роутерах всё ещё NOT TESTED.** Оригинальный форк и 27 веток сохраняются.
 
 ## Какие ревизии считать опорными
 
@@ -24,13 +24,13 @@
 
 ## Три результата, которые перенести в собственный проект
 
-1. **Исходный транспортный клиент:** весь воспроизводимый код WDTT из кандидата PR #42 в отдельную директорию/модуль, с GPL и историей Git, без попытки переписать wire protocol ради брендинга.
+1. **ВЫПОЛНЕНО — исходный транспортный клиент:** код WDTT PR #42 импортирован в `transports/wdtt/` с GPL и Git-историей без переписывания wire protocol.
 2. **Собственный адаптер KeenWhite:** provider manifest, приватный профиль, binary/source SHA, `Start/Stop/Doctor` (позднее), PID/socket ownership, 30-min lab cutoff, проверки настоящего TCP и UDP, memory gates. Писать независимо от исходного WDTT; KAS PR #125 использовать как reference, не создавать второй watchdog.
 3. **Доказательства и история исследований:** ссылки на CI, PR #14/#15/#21/#23/#24/#25/#34/#40/#41/#42, матрица `18/1` vs `18/2`, временные лимиты, негативные случаи, UDP ASSOCIATE, stale status, fail-closed, BusyBox и Entware. Личные конфиги и raw логи **не переносить**.
 
 ## Acceptance gates
 
-- Первоначальный `git subtree` импорт в KeenWhite — **Draft PR**, не default branch.
+- Исторический `git subtree` импорт принят без squash в KeenWhite `main` (PR #1); **импорт исходников ≠ эксплуатационная приёмка**.
 - Оригинальный WDTT `LICENSE` и NOTICE остаются целы, история происхождения (`git log --follow`) проверяется.
 - CI проверяет Go race/vet, отдельный Go-module/build-tools и pinned Entware SDK, QEMU; физические тесты отдельно.
 - Никакого изменения действующих Proxy1/Policy2/Mihomo/DNS, домашнего NC-4210 или других роутеров.

@@ -9,11 +9,11 @@ Each phase needs test evidence; dates are not delivery promises.
 - CI Go vet/race and ARM64/MIPSel **build-only**; no release or router installation.
 - Own README, architecture, licence, security and contribution docs.
 
-## KW-00A: Consolidate WDTT provenance / NEXT
+## KW-00A: Consolidate WDTT provenance / SOURCE IMPORTED, CI PASS
 
 - Create the real new GitHub repository, enable main protection and CI.
 - Record 27 historical WDTT branches and all key outstanding draft PRs (see migration ledger).
-- Prepare and review the pinned full-history WDTT subtree import. No auto-merge, no deletion/archival of the original yet.
+- [x] Merged full-history GPL WDTT subtree [PR #1](https://github.com/saymer-alt/keenwhite/pull/1) into KeenWhite main; **234/234 blobs identical**, 152 upstream commits carried. Isolated WDTT Go-native/race and ARM64/MIPSel QEMU checks PASS. No hardware acceptance or release.
 - Migrate future engineering discussion from KAS into KeenWhite; keep backlinks to original issues.
 
 ## KW-001: Contract alignment / NEXT
@@ -24,7 +24,7 @@ Each phase needs test evidence; dates are not delivery promises.
 
 ## KW-002: Consolidation and first executable provider — WDTT
 
-- Import pinned WDTT PR #42 into `transports/wdtt/` **with its complete Git ancestry and GPL license** through a gated Draft PR. Keep original repo/PRs intact during transition.
+- [x] Pinned WDTT PR #42 imported into `transports/wdtt/` preserving Git ancestry and GPL-3.0 (KeenWhite PR #1). Keep original repo/PRs untouched; source import does not confer live service readiness.
 - Build a separate independently authored KeenWhite adapter for lab-only WDTT binary and private profile; do not fake original authorship or rewrite wire protocol.
 - Identity, checksum, resource admission, owner PID, fresh status, TCP/UDP E2E proof, 30-minute owner hard stop, resource cleanup.
 - Reuse KAS PR #125 integration, never create a second watchdog; retain 512 MB combined gate, no global KAS gate.

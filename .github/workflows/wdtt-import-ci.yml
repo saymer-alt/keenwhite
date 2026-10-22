@@ -1,4 +1,4 @@
-# Independent validation for GPL WDTT subtree; no releases, uploads, secrets, devices.
+# Continuous verification for GPL WDTT subtree; no releases, uploads, secrets, devices.
 name: WDTT imported source CI
 on:
   pull_request:
@@ -10,7 +10,7 @@ on:
       - migration/wdtt-pr42-d39f9dad9163
   push:
     branches:
-      - ci/wdtt-import-independent-20261022
+      - main
   workflow_dispatch:
 permissions:
   contents: read
