@@ -446,6 +446,17 @@ func TestSecretsNeverLogged(t *testing.T) {
 
 func TestRealExecutionForbidden(t *testing.T) {
 	f := newFixture(t)
+	// A real-kind runner is refused at adapter construction:
+	if _, err := New(f.manifest, fakeRealRunner{}, f.clock, nil); err != provider.ErrForbiddenByPolicy {
+		t.Fatalf("real runner refused at construction, got %v", err)
+	}
+	// A real-kind runner refuses the launch itself (defense in depth):
+	if _, err := (fakeRealRunner{}).Start(context.Background(),
+		provider.StartPlan{Command: "x", Executor: provider.ExecutionReal}); err != provider.ErrForbiddenByPolicy {
+		t.Fatalf("real runner Start must be forbidden, got %v", err)
+	}
+	// A plan flipped to ExecutionReal after Prepare is PLAN TAMPERING and is
+	// refused by the integrity check before the runner is ever consulted:
 	writeTestELF(t, f.manifest.Artifact.Path)
 	f.manifest.Artifact.SHA256 = sha256File(t, f.manifest.Artifact.Path)
 	a, _ := f.adapter()
@@ -453,11 +464,25 @@ func TestRealExecutionForbidden(t *testing.T) {
 		t.Fatalf("prepare: %v", err)
 	}
 	a.plan.Executor = provider.ExecutionReal
-	if err := a.Start(context.Background()); err != provider.ErrForbiddenByPolicy {
-		t.Fatalf("real executor must be forbidden, got %v", err)
+	if err := a.Start(context.Background()); !errors.Is(err, ErrPlanTampered) {
+		t.Fatalf("flipped plan must be refused as tampered, got %v", err)
 	}
-	if _, err := New(f.manifest, fakeRealRunner{}, f.clock, nil); err != provider.ErrForbiddenByPolicy {
-		t.Fatalf("real runner must be refused at construction: %v", err)
+	// A grantless lab executor cannot launch anything either: the adapter is
+	// built WITH the grantless runner from the start (swapping the runner
+	// after Prepare is itself plan tampering — covered above).
+	f2 := newFixture(t)
+	_ = writeTestELF(t, f2.manifest.Artifact.Path)
+	f2.manifest.Artifact.SHA256 = sha256File(t, f2.manifest.Artifact.Path)
+	grantless := NewExecRunner(LabGrant{})
+	a2, err := New(f2.manifest, grantless, f2.clock, func() (int, error) { return 2048, nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a2.Prepare(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := a2.Start(context.Background()); !errors.Is(err, ErrGrantDenied) {
+		t.Fatalf("grantless lab exec must be denied at Start, got %v", err)
 	}
 }
 

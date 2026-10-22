@@ -1,20 +1,12 @@
-// Package wdtt implements the KeenWhite Provider Contract v1 adapter for the
-// WDTT Suite transport (GPL-3.0, run as a SEPARATE process — never linked).
-//
-// Stage-0 safety envelope (task #10 stage C/D):
-//   - Start works only through the configured Runner: a mock (tests) or an
-//     explicitly configured lab executor. The "real" execution kind is
-//     refused with provider.ErrForbiddenByPolicy until hardware acceptance.
-//   - Stop signals ONLY the process object this adapter started; there is no
-//     API to stop by arbitrary PID.
-//   - The WDTT 30-minute lab hard stop is preserved: the plan's hard-stop
-//     deadline is mandatory, enforced by the adapter, and never extended.
-//   - Profile contents (tokens, TURN credentials, links) are never logged,
-//     never embedded in plans/diagnostics, and never placed in argv/env.
 package wdtt
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
+	"errors"
+	"io"
 	"os"
 	"os/exec"
 
@@ -43,19 +35,67 @@ type Runner interface {
 	Start(ctx context.Context, plan provider.StartPlan) (Process, error)
 }
 
-// --- exec runner (lab executor) -------------------------------------------
+// LabGrant is the explicit owner-side authorisation for the lab executor.
+// A bare ExecutionLab kind is NOT a permission (task #11 B2): the grant
+// names the ONE binary that may be launched, pinned by its SHA256. There is
+// deliberately no constructor that yields an unscoped ExecRunner, and no
+// way to launch an arbitrary command from an unconfirmed manifest.
+type LabGrant struct {
+	// BinaryPath is the only executable this grant authorises.
+	BinaryPath string
+	// SHA256 pins the binary contents (64 lowercase hex). Verified at every
+	// Start with a constant-time compare over a fresh hash of the file.
+	SHA256 string
+}
 
-// ExecRunner starts real OS processes. It is the "lab" executor: allowed
-// only in owner-lab contexts, never on production routers in this stage.
-// A production executor (ExecutionReal) must be a separate, owner-approved
-// implementation; this package deliberately does not provide one.
-type ExecRunner struct{}
+// ErrGrantDenied is returned when a launch is not covered by a valid grant.
+var ErrGrantDenied = errors.New("lab grant denied: no grant, wrong binary path, or binary hash mismatch")
 
-// NewExecRunner returns the lab executor.
-func NewExecRunner() *ExecRunner { return &ExecRunner{} }
+// --- exec runner (grant-gated lab executor) --------------------------------
+
+// ExecRunner starts real OS processes ONLY within a LabGrant. Without a
+// valid grant every Start returns ErrGrantDenied — the runner cannot launch
+// anything, so an unconfirmed manifest or a swapped plan cannot reach the OS.
+type ExecRunner struct {
+	grant LabGrant
+}
+
+// NewExecRunner returns a grant-gated lab executor. A zero grant denies
+// everything; production ("real router") execution must be a separate,
+// owner-approved implementation that this package intentionally does not
+// provide.
+func NewExecRunner(grant LabGrant) *ExecRunner { return &ExecRunner{grant: grant} }
 
 // Kind reports ExecutionLab.
 func (r *ExecRunner) Kind() provider.ExecutionKind { return provider.ExecutionLab }
+
+// Grant verifies the plan against the grant WITHOUT launching anything:
+// the command path must equal the granted path, and the on-disk file must
+// currently hash to the granted SHA256 (constant-time compare).
+func (r *ExecRunner) Grant(plan provider.StartPlan) error {
+	if r.grant.BinaryPath == "" || len(r.grant.SHA256) != 64 {
+		return ErrGrantDenied
+	}
+	if plan.Command != r.grant.BinaryPath {
+		return ErrGrantDenied
+	}
+	f, err := os.Open(plan.Command)
+	if err != nil {
+		return fmtHashErr(err)
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return fmtHashErr(err)
+	}
+	got := hex.EncodeToString(h.Sum(nil))
+	if subtle.ConstantTimeCompare([]byte(got), []byte(r.grant.SHA256)) != 1 {
+		return ErrGrantDenied
+	}
+	return nil
+}
+
+func fmtHashErr(err error) error { return errors.Join(ErrGrantDenied, err) }
 
 // LabProcess wraps exec.Cmd as a Process.
 type LabProcess struct {
@@ -66,12 +106,19 @@ type LabProcess struct {
 }
 
 // Start implements Runner. argv = plan.Command + plan.Args (no secrets: the
-// plan carries paths only; credentials stay inside the profile file).
-func (r *ExecRunner) Start(_ context.Context, plan provider.StartPlan) (Process, error) {
+// plan carries paths only; credentials stay inside the profile file). The
+// grant is re-verified immediately before every launch.
+func (r *ExecRunner) Start(ctx context.Context, plan provider.StartPlan) (Process, error) {
 	if plan.Executor == provider.ExecutionReal {
 		return nil, provider.ErrForbiddenByPolicy
 	}
+	if err := r.Grant(plan); err != nil {
+		return nil, err
+	}
 	cmd := exec.Command(plan.Command, plan.Args...)
+	if ctx != nil {
+		cmd = exec.CommandContext(ctx, plan.Command, plan.Args...)
+	}
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
