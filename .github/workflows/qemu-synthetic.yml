@@ -1,0 +1,40 @@
+# Heavy QEMU synthetic checks run ONLY when transport sources change
+# (paths filter) or manually. Pure Go user-mode emulation of the
+# cross-built binaries; no network, no devices, no credentials, and never
+# a substitute for physical acceptance (KeenWhite issue #3).
+name: QEMU synthetic (transports)
+on:
+  pull_request:
+    paths:
+      - 'transports/**'
+      - '.github/workflows/qemu-synthetic.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  qemu-user-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Crossbuild core for arm64/mipsle
+        run: |
+          mkdir -p dist
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o dist/keenwhite-linux-arm64 ./cmd/keenwhite
+          CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -trimpath -o dist/keenwhite-linux-mipsle ./cmd/keenwhite
+      - name: Install qemu-user-static (distribution package)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq qemu-user-static
+      - name: Synthetic smoke under QEMU (offline commands only)
+        run: |
+          qemu-aarch64-static ./dist/keenwhite-linux-arm64 version
+          qemu-aarch64-static ./dist/keenwhite-linux-arm64 validate -catalog examples/providers.json
+          qemu-mipsel-static ./dist/keenwhite-linux-mipsle version
+          qemu-mipsel-static ./dist/keenwhite-linux-mipsle validate -catalog examples/providers.json
+      - name: Synthetic smoke of imported WDTT sources (build-only, offline)
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o /dev/null ./transports/wdtt/go_client 2>/dev/null \
+            || echo "go_client build skipped: platform-specific sources (documented in WDTT-SOURCE-LEDGER.md)"

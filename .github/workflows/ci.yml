@@ -23,6 +23,18 @@ jobs:
         run: |
           go vet ./...
           go test -race ./...
+      - name: Emulator harness (offline fake) + report artifact
+        run: |
+          go test -race -count=1 -run 'TestAllScenarios' ./internal/harness/ -v
+          KW_HARNESS_REPORT=${{ github.workspace }}/harness-report.json go test -count=1 -run 'TestAllScenarios' ./internal/harness/ >/dev/null
+          test -s harness-report.json
+      - name: Upload harness report (secret-free by construction)
+        if: always()
+        uses: actions/upload-artifact@v4 # TODO: pin by commit SHA repo-wide (follow-up)
+        with:
+          name: harness-report
+          path: harness-report.json
+          if-no-files-found: warn
       - name: Build-only portability checks (NOT hardware acceptance)
         run: |
           mkdir -p dist
