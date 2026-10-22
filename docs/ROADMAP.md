@@ -16,7 +16,10 @@ Each phase needs test evidence; dates are not delivery promises.
 - [x] Merged full-history GPL WDTT subtree [PR #1](https://github.com/saymer-alt/keenwhite/pull/1) into KeenWhite main; **234/234 blobs identical**, 152 upstream commits carried. Isolated WDTT Go-native/race and ARM64/MIPSel QEMU checks PASS. No hardware acceptance or release.
 - Migrate future engineering discussion from KAS into KeenWhite; keep backlinks to original issues.
 
-## KW-001: Contract alignment / NEXT
+## KW-001: Contract alignment / DONE (code), emulator integration NEXT
+
+- [x] Provider Contract v1 (`internal/provider`, PR #14): versioned interface Validate/Prepare/Status/Start/Stop/Health; evidence levels; PROCESS_RUNNING / LISTENER_READY / TRAFFIC_E2E_VERIFIED kept distinct; measurement TTL with stale E2E downgrade.
+- [x] Hardened in task #11/#12 (PRs #22/#23/#25): admission at every boundary, plan-integrity, generations/ownership, bounded stop, LabGrant, fail-closed evidence.
 
 - Make native KeenWhite adapter contract versioned and map it explicitly to KAS MT-001/MT-002 JSON Schemas and status freshness semantics.
 - Read-only protocol/port conflict checks, offline negative fixtures, no PID or service manipulation.
@@ -26,7 +29,8 @@ Each phase needs test evidence; dates are not delivery promises.
 
 - [x] Pinned WDTT PR #42 imported into `transports/wdtt/` preserving Git ancestry and GPL-3.0 (KeenWhite PR #1). Keep original repo/PRs untouched; source import does not confer live service readiness.
 - Build a separate independently authored KeenWhite adapter for lab-only WDTT binary and private profile; do not fake original authorship or rewrite wire protocol.
-- Identity, checksum, resource admission, owner PID, fresh status, TCP/UDP E2E proof, 30-minute owner hard stop, resource cleanup.
+- [x] Adapter v0 exists (`internal/provider/wdtt`, PRs #15/#16/#22/#25): full admission re-verified at Start, 1800s hard stop pinned and enforced on an injected clock, generation/ownership-verified stop (TERM→grace→KILL bounded), LabGrant-gated lab executor, secret-free diagnostics.
+- [ ] TCP/UDP E2E proof and RAM measurement — requires emulator/physical acceptance (issue #3). Identity, checksum, resource admission, owner PID, fresh status are implemented and tested offline; the 30-minute owner hard stop is enforced by the adapter and documented.
 - Reuse KAS PR #125 integration, never create a second watchdog; retain 512 MB combined gate, no global KAS gate.
 - Do not implement before separate owner approval and hardware acceptance evidence.
 

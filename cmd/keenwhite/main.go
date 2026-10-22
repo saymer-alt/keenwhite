@@ -10,7 +10,7 @@ import (
 )
 
 // Version is set at build time. The development version must not imply production readiness.
-var Version = "0.2.0-dev"
+var Version = "0.2.1-dev"
 
 func main() { os.Exit(run(os.Args[1:])) }
 
