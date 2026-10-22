@@ -14,6 +14,7 @@
 
 | Группа | Исходные ссылки | Новое направление KeenWhite |
 |---|---|---|
+| YPtun as WDTT library/RAW/worker/server source reference | [YPtun pinned v3.7.1 review](../research/YPTUN-WDTT-IMPLEMENTATION-20261022.md), [prior WDTT Suite #43](https://github.com/saymer-alt/wdtt-suite/issues/43) | KW-M2 [#3](https://github.com/saymer-alt/keenwhite/issues/3): source diff against gated WDTT PR #42, do not copy code or claim hardware acceptance |
 | WDTT client behavior, privacy and physical tests | [WDTT roadmap #25](https://github.com/saymer-alt/wdtt-suite/issues/25), [P0 #14](https://github.com/saymer-alt/wdtt-suite/issues/14), [PR #34](https://github.com/saymer-alt/wdtt-suite/pull/34), [PR #41](https://github.com/saymer-alt/wdtt-suite/pull/41), [PR #42](https://github.com/saymer-alt/wdtt-suite/pull/42) | KW-M1 source migration and KW-M2 physical correctness/security |
 | KAS optional WDTT installer/supervisor | [KAS PR #125](https://github.com/saymer-alt/keenetic-auto-setup/pull/125), [KAS #139](https://github.com/saymer-alt/keenetic-auto-setup/issues/139), [KAS #137](https://github.com/saymer-alt/keenetic-auto-setup/issues/137) | KW-K1 compatibility. KAS still installs other components |
 | MultiTransport product boundaries | [KAS PR #171](https://github.com/saymer-alt/keenetic-auto-setup/pull/171), [KAS #164](https://github.com/saymer-alt/keenetic-auto-setup/issues/164) | KW-C1 new-core contract; owner decision supersedes separate repo criterion (no need for two working providers first) |
