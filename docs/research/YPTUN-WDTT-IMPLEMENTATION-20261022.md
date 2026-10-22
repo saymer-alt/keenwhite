@@ -2,7 +2,7 @@
 
 **Reviewed:** 2026-10-22 · **Status:** `SOURCE_REVIEW_ONLY` · **No code import, no deployment, no E2E acceptance.**
 
-This note preserves a **source-pinned engineering reference**, not a proposal to fork YPtun or merge its bundled dependencies. KeenWhite is the product owner; its initial `main` only implements offline catalog/Doctor. The history-preserving WDTT Suite import remains gated in [KeenWhite Draft PR #1](../../pull/1).
+This note preserves a **source-pinned engineering reference**, not a proposal to fork YPtun or merge its bundled dependencies. KeenWhite is the product owner; its initial `main` only implements offline catalog/Doctor. The history-preserving WDTT Suite import remains gated in [KeenWhite Draft PR #1](https://github.com/saymer-alt/keenwhite/pull/1).
 
 ## Exact provenance / evidence
 
