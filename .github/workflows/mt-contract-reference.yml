@@ -1,0 +1,24 @@
+# Synthetic reference tests migrated from KAS MT-001/MT-002.
+name: Reference MT contract tests
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/mt-contract-reference.yml'
+      - 'docs/research/multitransport/**'
+      - 'tests/multitransport-contract.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  reference-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned test-only jsonschema dependency
+        run: python -m pip install 'jsonschema==4.26.0'
+      - name: KAS v0 snapshot 33 synthetic checks, offline script
+        run: python tests/multitransport-contract.py --now 2026-10-21T12:00:00Z
