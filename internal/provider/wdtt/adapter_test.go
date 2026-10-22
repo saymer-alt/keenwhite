@@ -6,8 +6,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -84,7 +86,7 @@ func newFixture(t *testing.T) *fixture {
 		Provider:        "wdtt",
 		Artifact:        provider.ManifestArtifact{Path: bin, SHA256: strings.Repeat("a", 64), Arch: "arm64"},
 		Profile:         provider.ManifestProfile{Path: profile, RequiredFiles: []string{"client.json"}},
-		Socks:           provider.ManifestSocks{Bind: "127.0.0.1:1081", TCP: provider.EvidenceSourceConfirmed, UDP: provider.EvidenceSourceConfirmed},
+		Socks:           provider.ManifestSocks{Bind: "127.0.0.1:" + strconv.Itoa(1081+newFixtureSeq()), TCP: provider.EvidenceSourceConfirmed, UDP: provider.EvidenceSourceConfirmed},
 		Resources:       provider.ManifestRes{MinMemAvailableMB: 0, KASCombinedMinRAMMB: intPtr(512), AdmissionSource: "KAS-#137-combined-admission-policy"},
 		Lifecycle:       provider.ManifestLife{HardStopSeconds: WDTTHardStopSeconds, StopGraceSeconds: 1},
 	}
@@ -98,6 +100,14 @@ func newFixture(t *testing.T) *fixture {
 }
 
 func intPtr(i int) *int { return &i }
+
+// newFixtureSeq hands each fixture its own port so parallel packages and
+// repeated -count runs never collide on a fixed loopback port.
+var fixtureSeq atomic.Uint64
+
+func newFixtureSeq() int {
+	return int(fixtureSeq.Add(1)) + time.Now().Nanosecond()%512
+}
 
 func (f *fixture) adapter() (*Adapter, error) {
 	mem := func() (int, error) { return 2048, nil }
