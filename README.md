@@ -46,6 +46,16 @@ go run ./cmd/keenwhite doctor -catalog examples/providers.json -json
 
 `validate` проверяет строгость JSON, ID, типы evidence, адреса **только 127.0.0.1**, порты, дубликаты, конфликт bind и policy-метаданные. `doctor` **не выполняет сетевых запросов, не открывает сокеты, не запускает transport, не читает приватные профили и не правит маршруты**. По этой причине поле TCP/UDP E2E всегда `NOT_TESTED`.
 
+### Проверка WDTT-бинарника без запуска
+
+Собственная команда KeenWhite `verify-wdtt` сверяет ELF-архитектуру и SHA256 с **независимо полученной** контрольной суммой, не запускает файл и не открывает соединения:
+
+```sh
+go run ./cmd/keenwhite verify-wdtt -file /secure/wt-client-linux-arm64 -sha256 YOUR_TRUSTED_64_HEX_SHA256 -arch arm64 -json
+```
+
+Проверка идентичности бинарника **не доказывает** работу транспорта, TCP/UDP E2E, отсутствие утечек или авторство источника хеша. [Ограничения и инструкция](docs/WDTT-ARTIFACT-PREFLIGHT.md).
+
 ### Сборка под Keenetic (пока только проверка кросс-компиляции)
 
 ```sh
