@@ -1,6 +1,16 @@
 # Единый backlog KeenWhite после создания нового repo
 
-Эта карта даёт новому репозиторию единую точку инженерных решений без удаления старой истории. До фактического GitHub создания `saymer-alt/keenwhite` **ссылки ниже являются ссылками на источники**, а не на существующие KeenWhite issues.
+Эта карта даёт новому репозиторию единую точку инженерных решений без удаления старой истории. Репозиторий `saymer-alt/keenwhite` создан 22.10.2026 (не fork); первичный backlog заведён как пять связанных Issues:
+
+| Направление | KeenWhite Issue |
+|---|---|
+| WDTT GPL source history and exact PR42 provenance | [#2](https://github.com/saymer-alt/keenwhite/issues/2) — реализовано в Draft [PR #1](https://github.com/saymer-alt/keenwhite/pull/1) (не слит, ждёт приёмки) |
+| WDTT physical acceptance and security (18/1 + UDP + hard stop) | [#3](https://github.com/saymer-alt/keenwhite/issues/3) |
+| MT-001 / MT-002 contract and semantic negative checks | [#4](https://github.com/saymer-alt/keenwhite/issues/4) |
+| OpenFlux independent-carrier and DNS architecture | [#5](https://github.com/saymer-alt/keenwhite/issues/5) |
+| KAS optional installer integration — defer runtime install | [#6](https://github.com/saymer-alt/keenwhite/issues/6) |
+
+Ссылки ниже — на исходные репозитории (источники решений), а не на дубликаты задач.
 
 | Группа | Исходные ссылки | Новое направление KeenWhite |
 |---|---|---|
