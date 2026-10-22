@@ -245,14 +245,16 @@ func (a *Adapter) Start(ctx context.Context) error {
 
 	// Hard-stop watcher: WDTT's 30-minute lab limit, enforced by the adapter
 	// with the injected clock (tests trigger it without real waiting).
+	// The deadline snapshot is passed by value: a late watcher from a
+	// previous cycle can never race with a new cycle's Start.
 	stopCtx := ctx
-	go a.watchDeadline(stopCtx, proc)
+	go a.watchDeadline(stopCtx, proc, a.plan.Deadline)
 	return nil
 }
 
-func (a *Adapter) watchDeadline(_ context.Context, proc Process) {
+func (a *Adapter) watchDeadline(_ context.Context, proc Process, deadline time.Time) {
 	// Deadline math uses the INJECTED clock so tests control time.
-	ttl := a.deadline.Sub(a.clock.Now())
+	ttl := deadline.Sub(a.clock.Now())
 	if ttl <= 0 {
 		a.stopForHardStop(proc)
 		return
@@ -260,6 +262,7 @@ func (a *Adapter) watchDeadline(_ context.Context, proc Process) {
 	ch := a.clock.After(ttl)
 	select {
 	case <-ch:
+		a.deadline = deadline
 		a.stopForHardStop(proc)
 	case <-proc.Done():
 	}
