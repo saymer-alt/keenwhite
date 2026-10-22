@@ -2,7 +2,7 @@
 
 **Independent white-list transport platform for Keenetic / Netcraze**
 
-> Статус: **0.1.0-dev / экспериментальный проект**. Собственное Go-ядро выполняет offline-валидацию и read-only Doctor. **Исходники WDTT перенесены в `transports/wdtt/` и включены в `main` через [PR #1](https://github.com/saymer-alt/keenwhite/pull/1) с сохранением истории и GPL-3.0.** Изолированный CI клиентских/серверных Go-модулей и ARM64/MIPSel QEMU прошёл; **реального E2E на Keenetic и продуктового релиза KeenWhite пока НЕТ**.
+> Статус: **0.2.1-dev**. Работает: offline CLI (`validate/providers/doctor/verify-wdtt`), Provider Contract v1 (`internal/provider`), WDTT-адаптер v0 с полным admission на Start/Prepare и 1800-секундным lab hard-stop (`internal/provider/wdtt`), Emulator Harness 18 сценариев + регрессии R01–R12 (`internal/harness`), контракт-заглушка `keenetic-emulator/v0` (`internal/emulator`). Защита main: ruleset с обязательным зелёным `offline-checks`; все actions запинены по SHA. **Реального E2E на Keenetic/эмуляторе и продуктового релиза по-прежнему НЕТ — статус транспорта `NOT_TESTED`.** Матрица готовности: [docs/READINESS-0.2.1.md](docs/READINESS-0.2.1.md). История WDTT — [PR #1](https://github.com/saymer-alt/keenwhite/pull/1), GPL-3.0 сохранён.
 
 KeenWhite — **наш единый поддерживаемый проект для сетевых транспортов в ограниченных сетях Keenetic/Netcraze**. Вместо множества самостоятельных экспериментальных форков здесь будут находиться собственное программное ядро, обслуживаемые транспортные модули (сначала WDTT), адаптеры, тесты, диагностика и общая дорожная карта. Различные сетевые протоколы не обязаны объединяться в один бинарник: самостоятельный репозиторий и единая система разработки совместимы с раздельными процессами и лицензиями.
 
