@@ -1,0 +1,12 @@
+/bin/
+/dist/
+*.log
+*.test
+*.out
+*.prof
+.env
+*.key
+*.pem
+*.token
+secrets/
+configs/private/

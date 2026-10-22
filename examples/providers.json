@@ -1,0 +1,33 @@
+{
+  "api_version": "keenwhite.dev/v0alpha1",
+  "providers": [
+    {
+      "id": "wdtt",
+      "name": "WDTT Suite",
+      "lifecycle": "lab",
+      "source": "https://github.com/saymer-alt/wdtt-suite",
+      "wire": "wdtt-specific",
+      "server_class": "wdtt-compatible-exit",
+      "bind": "127.0.0.1:1081",
+      "tcp": "SOURCE_CONFIRMED",
+      "udp": "SOURCE_CONFIRMED",
+      "kas_combined_min_ram_mb": 512,
+      "notes": "512 MB is the KAS+WDTT admission policy only, not a standalone requirement or proof of performance. Physical production acceptance pending.",
+      "evidence_url": "https://github.com/saymer-alt/keenetic-auto-setup/issues/139"
+    },
+    {
+      "id": "openflux",
+      "name": "OpenFlux",
+      "lifecycle": "candidate",
+      "source": "https://github.com/p1neappleXpress/OpenFlux",
+      "wire": "openflux-negotiated-session",
+      "server_class": "openflux-compatible-exit",
+      "bind": "127.0.0.1:1083",
+      "tcp": "BUILD_CONFIRMED",
+      "udp": "SOURCE_CONFIRMED",
+      "kas_combined_min_ram_mb": null,
+      "notes": "Based on source review of v0.13.0. Local DNS, direct carrier priority, real UDP and RAM must be tested on Keenetic. No KAS adapter exists yet.",
+      "evidence_url": "https://github.com/saymer-alt/keenetic-auto-setup/pull/199"
+    }
+  ]
+}
