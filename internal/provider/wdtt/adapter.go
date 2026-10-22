@@ -20,8 +20,16 @@ import (
 var osReadFile = os.ReadFile
 
 // WDTT lab hard stop (KAS/owner-lab policy): preserved exactly, never
-// extended, never dropped. See task #10 stage D.
+// extended, never dropped. See task #10 stage D / task #11 stage B.
 const WDTTHardStopSeconds = 1800
+
+// ErrStopIncomplete is returned when a process survived SIGKILL past the
+// bounded post-kill wait. Callers must never wait indefinitely.
+var ErrStopIncomplete = errors.New("stop incomplete: process survived SIGKILL past the bounded wait")
+
+// ErrPlanTampered is returned when the prepared plan no longer matches the
+// manifest the adapter validated (mutation between Prepare and Start).
+var ErrPlanTampered = errors.New("plan tampered: prepared plan does not match the validated manifest")
 
 // parseMemAvailableMB extracts MemAvailable (KiB) as whole MiB.
 func parseMemAvailableMB(meminfo string) (int, error) {
@@ -42,8 +50,14 @@ func parseMemAvailableMB(meminfo string) (int, error) {
 }
 
 // Adapter implements provider.Provider for WDTT.
-// Construct with New; all inputs are injected so tests never touch a real
-// router, real /proc, or real credentials.
+//
+// Admission is enforced at EVERY method boundary (Validate, Prepare, Start):
+// safety never depends on the caller calling Validate first (task #11 B1).
+// The plan produced by Prepare is a snapshot; Start re-derives the expected
+// plan and refuses on any mismatch (R03). Every start increments a
+// generation; the hard-stop watcher and Stop act only on the CURRENT
+// generation and the recorded identity, so a stale watcher can never touch a
+// new process (B3/R05/R06).
 type Adapter struct {
 	manifest provider.Manifest
 	runner   Runner
@@ -53,18 +67,21 @@ type Adapter struct {
 	mu          sync.Mutex
 	state       provider.LifecycleState
 	proc        Process
+	active      provider.ProcessInfo // identity recorded at Start
+	generation  uint64               // increments on every successful Start
 	plan        provider.StartPlan
+	preparedOK  bool
 	deadline    time.Time
-	exitErr     error
-	lastHealth  provider.Health
 	hardStopped bool
+	exitErr     error
 }
 
-// New builds the adapter. runner must be a mock or lab runner — a "real"
-// runner is refused here AND at Start time (defense in depth).
+// New builds the adapter. runner must be a mock, or an ExecRunner created
+// WITH a lab grant — a grantless or "real" runner is refused here AND at
+// Start time (defense in depth).
 func New(m provider.Manifest, runner Runner, clk Clock, mem MemAvailableMB) (*Adapter, error) {
 	if runner == nil {
-		return nil, errors.New("runner is required (mock or lab; real execution is forbidden in this stage)")
+		return nil, errors.New("runner is required (mock or granted lab; real execution is forbidden in this stage)")
 	}
 	if runner.Kind() == provider.ExecutionReal {
 		return nil, provider.ErrForbiddenByPolicy
@@ -90,9 +107,10 @@ func (a *Adapter) Name() string { return a.manifest.Provider }
 // APIVersion returns the implemented contract version.
 func (a *Adapter) APIVersion() string { return provider.APIVersionV1 }
 
-// Validate runs manifest semantics plus file-presence checks. It reads the
-// referenced files but never parses profile VALUES into logs or plans.
-func (a *Adapter) Validate(_ context.Context) []provider.Problem {
+// validateAll is the single admission funnel: manifest semantics, profile
+// presence, and the WDTT hard-stop policy. Validate, Prepare and Start all
+// run it — bypassing Validate bypasses nothing (task #11 B1).
+func (a *Adapter) validateAll() []provider.Problem {
 	problems := provider.ValidateManifest(a.manifest)
 	if err := checkProfile(&a.manifest); err != nil {
 		problems = append(problems, provider.Errorf("profile", "%v", err))
@@ -101,6 +119,25 @@ func (a *Adapter) Validate(_ context.Context) []provider.Problem {
 		problems = append(problems, provider.Errorf("lifecycle.hard_stop_seconds", "%v", err))
 	}
 	return problems
+}
+
+// Validate runs the full admission checks. It reads the referenced files but
+// never parses profile VALUES into logs or plans.
+func (a *Adapter) Validate(_ context.Context) []provider.Problem {
+	return a.validateAll()
+}
+
+// checkWDTTPolicy pins the provider-specific safety policy: the WDTT lab
+// hard stop is exactly 30 minutes and may never be raised, lowered or
+// dropped here.
+func checkWDTTPolicy(m *provider.Manifest) error {
+	if m.Provider != "wdtt" {
+		return nil
+	}
+	if m.Lifecycle.HardStopSeconds != WDTTHardStopSeconds {
+		return errors.New("WDTT policy: hard stop must stay exactly 1800s (30-minute lab limit; never extended, never dropped)")
+	}
+	return nil
 }
 
 // checkProfile verifies presence and rough shape of the profile and its
@@ -133,35 +170,53 @@ func checkProfile(m *provider.Manifest) error {
 	return nil
 }
 
-// Prepare verifies the artifact, profile, resources and SOCKS port, and
-// produces the StartPlan WITHOUT executing anything.
+// Prepare verifies admission (again, independently of Validate), the
+// artifact, profile, resources and SOCKS port, and produces the StartPlan
+// WITHOUT executing anything. A successful Prepare is NOT a standing
+// permission: Start re-validates everything under its own lock (B1).
+// Prepare is refused while a process is running, so the plan of a live
+// provider cannot be re-derived underneath it.
 func (a *Adapter) Prepare(_ context.Context) (provider.PrepareResult, error) {
 	var res provider.PrepareResult
 	a.mu.Lock()
+	defer a.mu.Unlock()
+	// B1: admission is mandatory here, order-independent.
+	for _, p := range a.validateAll() {
+		if p.Severity == "error" {
+			a.state = provider.StateFailed
+			return res, fmt.Errorf("admission failed: %s: %s", p.Field, p.Message)
+		}
+	}
+	if a.proc != nil {
+		select {
+		case <-a.proc.Done():
+		default:
+			return res, errors.New("Prepare refused: provider is running; stop it first")
+		}
+	}
 	a.state = provider.StatePreparing
-	a.mu.Unlock()
 
 	rep, err := artifact.VerifyWDTT(a.manifest.Artifact.Path, a.manifest.Artifact.SHA256, a.manifest.Artifact.Arch)
 	if err != nil {
-		a.setState(provider.StateFailed)
+		a.state = provider.StateFailed
 		return res, fmt.Errorf("artifact verification: %w", err)
 	}
 
 	memMB, err := a.mem()
 	if err != nil {
-		a.setState(provider.StateFailed)
+		a.state = provider.StateFailed
 		return res, fmt.Errorf("memory probe: %w", err)
 	}
 	memRes := provider.Resources{MemAvailableMB: memMB, Admitted: true}
 	if need := a.manifest.Resources.MinMemAvailableMB; need > 0 && memMB < need {
 		memRes.Admitted = false
 		memRes.Reason = fmt.Sprintf("needs %dMB available, device has %dMB", need, memMB)
-		a.setState(provider.StateFailed)
+		a.state = provider.StateFailed
 		return res, fmt.Errorf("resource admission failed: %s", memRes.Reason)
 	}
 
 	if err := checkSocksPort(a.manifest.Socks.Bind); err != nil {
-		a.setState(provider.StateFailed)
+		a.state = provider.StateFailed
 		return res, fmt.Errorf("socks bind check: %w", err)
 	}
 
@@ -176,27 +231,24 @@ func (a *Adapter) Prepare(_ context.Context) (provider.PrepareResult, error) {
 		Resources: memRes,
 		Plan:      plan,
 	}
-	a.mu.Lock()
 	a.plan = plan
+	a.preparedOK = true
 	a.state = provider.StateIdle
-	a.mu.Unlock()
 	return res, nil
 }
 
 // buildPlan materialises the launch specification. The profile stays a PATH:
-// credentials are never placed in argv, env, or the plan itself. The exact
-// production flag surface is confirmed at lab acceptance; the hard-stop
-// deadline is derived from the manifest and is never negotiable here.
+// credentials are never placed in argv, env, or the plan itself. The deadline
+// is NOT fixed here — Start stamps it at the moment of the permitted launch
+// (task #11 B4), so a stale Prepare can never age the limit.
 func (a *Adapter) buildPlan() provider.StartPlan {
-	hard := a.manifest.Lifecycle.HardStopSeconds
 	return provider.StartPlan{
 		Command:         a.manifest.Artifact.Path,
 		Args:            []string{"-config", a.manifest.Profile.Path},
 		EnvKeys:         []string{"WDTT_CONFIG"},
 		ConfigPaths:     []string{a.manifest.Profile.Path},
 		SocksBind:       a.manifest.Socks.Bind,
-		HardStopSeconds: hard,
-		Deadline:        a.clock.Now().Add(time.Duration(hard) * time.Second),
+		HardStopSeconds: a.manifest.Lifecycle.HardStopSeconds,
 		Executor:        a.runner.Kind(),
 	}
 }
@@ -211,23 +263,46 @@ func checkSocksPort(bind string) error {
 	return ln.Close()
 }
 
-// Start performs a controlled launch. Refuses when resources are not
-// admitted, when a process is already running (scenario: double start), and
-// for any real-executor configuration (forbidden in this stage).
+// verifyPlanIntegrity re-derives the expected plan from the CURRENT manifest
+// and compares it with the prepared snapshot. Any mutation of the manifest or
+// of the prepared plan between Prepare and Start is refused (R03).
+func (a *Adapter) verifyPlanIntegrity() error {
+	if !a.preparedOK {
+		return errors.New("Start requires a successful Prepare first")
+	}
+	expected := a.buildPlan()
+	// The deadline is stamped at Start; everything else must match exactly.
+	expected.Deadline = a.plan.Deadline
+	if a.plan.Command != expected.Command ||
+		strings.Join(a.plan.Args, "\x00") != strings.Join(expected.Args, "\x00") ||
+		strings.Join(a.plan.EnvKeys, "\x00") != strings.Join(expected.EnvKeys, "\x00") ||
+		a.plan.SocksBind != expected.SocksBind ||
+		a.plan.HardStopSeconds != expected.HardStopSeconds ||
+		a.plan.Executor != expected.Executor {
+		return ErrPlanTampered
+	}
+	return checkWDTTPolicy(&a.manifest)
+}
+
+// Start performs a controlled launch. Re-validates admission (order-
+// independence, R01/R02), refuses plan tampering (R03), refuses double
+// start (a repeated start never extends a running limit, R08), stamps the
+// hard-stop deadline at the moment of the permitted launch (B4), and
+// increments the generation so stale watchers are inert for the new
+// process (R05).
 func (a *Adapter) Start(ctx context.Context) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.plan.Command == "" {
-		return errors.New("Start requires a successful Prepare first")
+	if err := a.verifyPlanIntegrity(); err != nil {
+		return err
 	}
 	if a.proc != nil {
 		select {
 		case <-a.proc.Done():
-			// previous process already exited; fall through with cleanup
 			a.exitErr = a.proc.ExitErr()
 			a.proc = nil
 		default:
-			return errors.New("provider already running (double start refused)")
+			return errors.New("provider already running (double start refused; a repeated start never extends the running limit)")
 		}
 	}
 	if a.plan.Executor == provider.ExecutionReal {
@@ -239,89 +314,130 @@ func (a *Adapter) Start(ctx context.Context) error {
 		a.exitErr = err
 		return fmt.Errorf("runner start: %w", err)
 	}
+	a.generation++
 	a.proc = proc
-	a.deadline = a.plan.Deadline
+	a.active = provider.ProcessInfo{PID: proc.PID(), ExePath: proc.ExePath(), StartTime: proc.StartTime()}
+	// B4: the deadline is computed from the real permitted-launch moment.
+	a.deadline = a.clock.Now().Add(time.Duration(a.plan.HardStopSeconds) * time.Second)
 	a.state = provider.StateProcessRunning
+	a.hardStopped = false
 
-	// Hard-stop watcher: WDTT's 30-minute lab limit, enforced by the adapter
-	// with the injected clock (tests trigger it without real waiting).
-	// The deadline snapshot is passed by value: a late watcher from a
-	// previous cycle can never race with a new cycle's Start.
-	stopCtx := ctx
-	go a.watchDeadline(stopCtx, proc, a.plan.Deadline)
+	gen := a.generation
+	go a.watchDeadline(ctx, proc, a.deadline, gen)
 	return nil
 }
 
-func (a *Adapter) watchDeadline(_ context.Context, proc Process, deadline time.Time) {
+func (a *Adapter) watchDeadline(_ context.Context, proc Process, deadline time.Time, gen uint64) {
 	// Deadline math uses the INJECTED clock so tests control time.
 	ttl := deadline.Sub(a.clock.Now())
 	if ttl <= 0 {
-		a.stopForHardStop(proc)
+		a.stopForHardStop(proc, gen)
 		return
 	}
 	ch := a.clock.After(ttl)
 	select {
 	case <-ch:
-		a.stopForHardStop(proc)
+		a.stopForHardStop(proc, gen)
 	case <-proc.Done():
 	}
 }
 
-// stopForHardStop terminates OUR process at the lab hard stop.
-func (a *Adapter) stopForHardStop(proc Process) {
+// verifyOwnership proves the handle still describes EXACTLY the process
+// recorded at Start of the CURRENT generation: same PID, same exe path, same
+// start time (a reused PID has a different start time), same generation.
+// Merely non-empty identity fields are NOT sufficient — they must equal the
+// registration snapshot.
+func (a *Adapter) verifyOwnership(proc Process, gen uint64) bool {
+	if a.generation != gen || a.proc == nil || a.proc.PID() != proc.PID() {
+		return false
+	}
+	return proc.PID() == a.active.PID &&
+		proc.ExePath() == a.active.ExePath &&
+		proc.StartTime() == a.active.StartTime
+}
+
+// stopForHardStop terminates OUR process at the lab hard stop — only if it
+// still belongs to the current generation and matches the recorded identity.
+func (a *Adapter) stopForHardStop(proc Process, gen uint64) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.proc == nil || a.proc.PID() != proc.PID() {
-		return // not ours / already replaced — never touch a foreign handle
+	if !a.verifyOwnership(proc, gen) {
+		return // stale watcher / reused PID / foreign handle — never signal
 	}
-	a.setStateLocked(provider.StateStopped)
+	a.state = provider.StateStopped
 	a.hardStopped = true
 	a.exitErr = errors.New("stopped by WDTT 30-minute lab hard stop (exit code 75 semantics preserved by the binary itself)")
-	// Graceful first, kill as the last resort — same handle, never a PID scan.
-	_ = proc.Signal(osInterrupt)
-	grace := a.manifest.Lifecycle.StopGraceSeconds
-	if grace <= 0 {
-		grace = 10
-	}
-	go func() {
-		select {
-		case <-proc.Done():
-		case <-time.After(time.Duration(grace) * time.Second):
-			_ = proc.Signal(osKill)
-		}
-	}()
+	terminateBounded(proc, time.Duration(a.manifest.Lifecycle.StopGraceSeconds)*time.Second, a.clock)
 }
 
 // Stop terminates ONLY the recorded process, verifying ownership first:
-// PID, exe path and start time must match what Start recorded. Grace then
-// kill — still through the same handle, never by scanning PIDs.
-func (a *Adapter) Stop(_ context.Context) error {
+// current generation, PID, exe path and start time must match what Start
+// recorded. The sequence is bounded: TERM → grace → KILL → short bounded
+// collect, after which ErrStopIncomplete is returned instead of waiting
+// forever. ctx cancellation is honoured at every stage.
+func (a *Adapter) Stop(ctx context.Context) error {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	if a.proc == nil {
 		a.state = provider.StateStopped
+		a.mu.Unlock()
 		return nil
 	}
 	proc := a.proc
-	// Ownership proof: the handle must be the one this adapter started.
-	if proc.PID() <= 0 || proc.ExePath() == "" || proc.StartTime() <= 0 {
-		return errors.New("refusing to stop: process identity incomplete")
+	gen := a.generation
+	if !a.verifyOwnership(proc, gen) {
+		a.mu.Unlock()
+		return errors.New("refusing to stop: process identity does not match the recorded owner")
 	}
 	grace := a.manifest.Lifecycle.StopGraceSeconds
 	if grace <= 0 {
 		grace = 10
 	}
+	a.mu.Unlock()
+
 	_ = proc.Signal(osInterrupt)
 	select {
 	case <-proc.Done():
 	case <-time.After(time.Duration(grace) * time.Second):
 		_ = proc.Signal(osKill)
-		<-proc.Done()
+		select {
+		case <-proc.Done():
+		case <-time.After(2 * time.Second):
+			return ErrStopIncomplete
+		case <-ctx.Done():
+			return fmt.Errorf("stop cancelled by context: %w", ctx.Err())
+		}
+	case <-ctx.Done():
+		return fmt.Errorf("stop cancelled by context: %w", ctx.Err())
 	}
+
+	a.mu.Lock()
 	a.exitErr = proc.ExitErr()
 	a.proc = nil
 	a.state = provider.StateStopped
+	a.mu.Unlock()
 	return nil
+}
+
+// terminateBounded is the shared TERM → grace → KILL sequence. The final
+// collect after KILL is bounded by the same grace; no caller ever blocks
+// indefinitely on a stuck process.
+func terminateBounded(proc Process, grace time.Duration, clk Clock) {
+	if grace <= 0 {
+		grace = 10 * time.Second
+	}
+	_ = proc.Signal(osInterrupt)
+	select {
+	case <-proc.Done():
+		return
+	case <-time.After(grace):
+		_ = proc.Signal(osKill)
+		select {
+		case <-proc.Done():
+		case <-clk.After(grace):
+			// bounded give-up; the stopping entry point records its own
+			// error semantics
+		}
+	}
 }
 
 // Status returns the lifecycle snapshot, degrading to STOPPED/FAILED when
@@ -364,23 +480,43 @@ func (a *Adapter) Status(_ context.Context) (provider.Status, error) {
 	return st, nil
 }
 
-// Health returns a fresh diagnostics snapshot. LISTENER_READY is reported
-// only from an actual probe (in this offline stage: never asserted); E2E
-// comes from the manifest evidence with freshness applied by the caller.
+// Health returns a fresh diagnostics snapshot of PROCESS and POLICY facts.
+// It does NOT refresh E2E evidence: the TCP/UDP levels carry the manifest's
+// ORIGINAL measurement time (task #11 stage C) and are downgraded to
+// UNKNOWN when stale via EffectiveTCP/EffectiveUDP against the caller's
+// clock. LISTENER_READY is reported only from a real probe — none exists in
+// this offline stage, so it is always false here; a running process alone is
+// never listener-ready, and a listener is never E2E.
 func (a *Adapter) Health(_ context.Context) (provider.Health, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	now := a.clock.Now()
 	h := provider.Health{
-		State:      a.state,
-		TCPE2E:     a.manifest.Socks.TCP,
-		UDPE2E:     a.manifest.Socks.UDP,
-		MeasuredAt: a.clock.Now(),
-		TTL:        provider.DefaultHealthTTL,
+		State:         a.state,
+		TCPE2E:        a.manifest.Socks.TCP,
+		UDPE2E:        a.manifest.Socks.UDP,
+		MeasuredAt:    now,
+		TTL:           provider.DefaultHealthTTL,
+		ListenerReady: false,
 		Details: map[string]string{
-			"runner":    string(a.runner.Kind()),
-			"bind":      a.manifest.Socks.Bind,
-			"hard_stop": strconv.Itoa(a.manifest.Lifecycle.HardStopSeconds),
+			"runner":               string(a.runner.Kind()),
+			"bind":                 a.manifest.Socks.Bind,
+			"hard_stop":            strconv.Itoa(a.manifest.Lifecycle.HardStopSeconds),
+			"generation":           strconv.FormatUint(a.generation, 10),
+			"evidence_measured_at": evidenceMeasuredAtUTC(&a.manifest),
 		},
+	}
+	// Effective evidence: original measurement time + TTL + URL, fail-closed.
+	tcpFresh := evidenceFresh(&a.manifest, now)
+	h.Details["tcp_e2e_fresh"] = strconv.FormatBool(tcpFresh)
+	h.Details["udp_e2e_fresh"] = strconv.FormatBool(tcpFresh)
+	if !tcpFresh {
+		if a.manifest.Socks.TCP == provider.EvidenceE2EVerified {
+			h.TCPE2E = provider.EvidenceUnknown
+		}
+		if a.manifest.Socks.UDP == provider.EvidenceE2EVerified {
+			h.UDPE2E = provider.EvidenceUnknown
+		}
 	}
 	if a.proc != nil {
 		select {
@@ -390,8 +526,34 @@ func (a *Adapter) Health(_ context.Context) (provider.Health, error) {
 			h.ProcessAlive = true
 		}
 	}
-	a.lastHealth = h
 	return h, nil
+}
+
+// evidenceMeasuredAtUTC renders the manifest's ORIGINAL measurement time
+// (or "never") — display only, never a freshness claim. Health() calls do
+// not move this value (task #11 stage C, R09).
+func evidenceMeasuredAtUTC(m *provider.Manifest) string {
+	if m.Evidence.MeasuredAt == nil {
+		return "never"
+	}
+	return m.Evidence.MeasuredAt.UTC().Format(time.RFC3339)
+}
+
+// evidenceFresh fails closed for E2E levels: a URL and a PAST measured_at
+// inside the manifest TTL are required; missing, future-dated or stale
+// evidence makes any E2E claim NOT fresh (caller downgrades to UNKNOWN).
+func evidenceFresh(m *provider.Manifest, now time.Time) bool {
+	if m.Socks.TCP != provider.EvidenceE2EVerified && m.Socks.UDP != provider.EvidenceE2EVerified {
+		return false
+	}
+	if m.Evidence.EvidenceURL == "" || m.Evidence.MeasuredAt == nil {
+		return false
+	}
+	measured := *m.Evidence.MeasuredAt
+	if measured.After(now.Add(5 * time.Minute)) { // future-dated = corrupt
+		return false
+	}
+	return now.Sub(measured) <= m.MeasurementTTL()
 }
 
 // ExitError exposes the last recorded exit/wait error for diagnostics.
@@ -400,14 +562,6 @@ func (a *Adapter) ExitError() error {
 	defer a.mu.Unlock()
 	return a.exitErr
 }
-
-func (a *Adapter) setState(s provider.LifecycleState) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.setStateLocked(s)
-}
-
-func (a *Adapter) setStateLocked(s provider.LifecycleState) { a.state = s }
 
 // LogScrubber wraps a writer so profile secrets that may arrive via process
 // stdout/stderr never reach persistent logs. Callers register secret values
@@ -453,16 +607,4 @@ func (s *LogScrubber) ScanLines(r *os.File) {
 	for sc.Scan() {
 		s.WriteLine(sc.Text())
 	}
-}
-
-// checkWDTTPolicy pins the provider-specific safety policy: the WDTT lab
-// hard stop is exactly 30 minutes and may never be raised or dropped here.
-func checkWDTTPolicy(m *provider.Manifest) error {
-	if m.Provider != "wdtt" {
-		return nil
-	}
-	if m.Lifecycle.HardStopSeconds != WDTTHardStopSeconds {
-		return errors.New("WDTT policy: hard stop must stay exactly 1800s (30-minute lab limit; never extended, never dropped)")
-	}
-	return nil
 }
