@@ -5,6 +5,8 @@ This is a provenance ledger for future engineering. Each link is to an independe
 | Source | Main useful idea | Provenance/licensing gate |
 |---|---|---|
 | [WDTT Suite](https://github.com/saymer-alt/wdtt-suite) | Local SOCKS5 TCP/UDP, TURN worker telemetry, bounded life/cleanup | Full-history GPL-3.0 source already imported to `transports/wdtt/` (pinned PR #42), preserve GPL-3.0, upstream authors, private protocol/profile and 30-min lab hard-stop |
+| [YPtun v3.7.1](https://github.com/yanisplugg/yptun/tree/6d78e96469db5df2aece311cd4ab3f5458ca58a9) | Bundled qWDTT library host API, TURN credential refresh/pacing, RAW/WG+SOCKS5, WDTT Plus server as reference — [source review](research/YPTUN-WDTT-IMPLEMENTATION-20261022.md) | GPL-3.0; qWDTT code derived from SpaceNeuroX v1.4.4, server from Ivan4537 WDTT Plus v17; research only, **not** approved code import or verified router E2E |
+
 | [OpenFlux](https://github.com/p1neappleXpress/OpenFlux) | Carrier adapters, negotiated sessions, native Linux SOCKS, exit node | GPL-3.0; remain a separate executable, do not paste code; tag v0.13.0 differs from upstream main |
 | [CSQTT](https://github.com/amurcanov/csqtt) | Alternative VK transport, bounded single-binary SOCKS considerations | PolyForm Noncommercial as recorded in KAS R7; check current LICENSE, independent compatible server, no assumption of UDP or VK independence |
 | [Swinter](https://github.com/somewhat-industries/swinter-ios) | MAX TURN/DTLS/WG transport architecture | Unlicense reported in R7; check vendored components and API terms, MAX is within VK ecosystem |
