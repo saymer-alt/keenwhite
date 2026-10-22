@@ -1,0 +1,66 @@
+# ===== Gradle =====
+.gradle/
+build/
+local.properties
+
+# ===== Android =====
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+app/build/
+app/release/
+
+# ===== Go =====
+# go.sum НЕ игнорируется: без него go build не соберёт модуль вовсе, а увидим
+# мы это только в CI после публикации тега. Правило пришло из апстрима
+# (e657ce4); go_client/go.sum уцелел лишь потому, что попал в индекс раньше.
+# При merge с апстримом строку не возвращать.
+
+# ===== Native Libraries (compiled) =====
+*.so
+*.dll
+*.dylib
+jniLibs/
+app/src/main/jniLibs/
+
+# ===== Server binary =====
+app/src/main/assets/server
+server
+
+# ===== Keystore / Secrets =====
+*.keystore
+*.jks
+*.key
+*.pem
+
+# ===== IDE =====
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+*~
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ===== Misc =====
+*.log
+*.tmp
+*.bak
+msg.txt
+*.bat
+wdtt-server
+.kotlin/
+.keys/
+
+# ===== Client binary =====
+# Сборка go_client кладёт бинарь рядом с исходниками и в корень дерева. В
+# апстриме этих путей нет, и один раз они уже уехали в коммит (24 и 13 МБ ELF
+# x86-64). Правила якорные: игнорируем ровно эти два места, не имя целиком.
+/wg-turn-client
+/go_client/wg-turn-client

@@ -1,0 +1,78 @@
+--- a/server.go
++++ b/server.go
+@@ -2014,6 +2014,7 @@
+ 	atomic.AddInt64(&totalConns, 1)
+ 
+ 	var connDeviceID string
++	authenticated := false
+ 
+ 	dtlsConn, ok := clientConn.(*dtls.Conn)
+ 	if !ok {
+@@ -2076,6 +2077,7 @@
+ 			dbMutex.Unlock()
+ 		} else if valid {
+ 			connDeviceID = deviceID
++			authenticated = true
+ 
+ 			// Сохраняем БД, так как canConnectAndBind мог внести привязку нового устройства
+ 			if isGenPass {
+@@ -2114,6 +2116,10 @@
+ 			dbMutex.Unlock()
+ 		}
+ 
++		if !authenticated {
++			return
++		}
++
+ 		clientConn.SetReadDeadline(time.Now().Add(5 * time.Minute))
+ 		n, err = clientConn.Read(buf)
+ 		if err != nil {
+@@ -2129,6 +2135,30 @@
+ 			deviceID = parts[0]
+ 		}
+ 
++		password := ""
++		if len(parts) == 2 {
++			password = parts[1]
++		}
++		dbMutex.Lock()
++		_, knownDevice := db.Devices[deviceID]
++		if knownDevice && password != "" {
++			if password == db.MainPassword {
++				authenticated = true
++			} else if entry, ok := db.Passwords[password]; ok && !entry.IsDeactivated && !isPasswordExpired(entry) {
++				for _, id := range entry.DeviceIDs {
++					if id == deviceID {
++						authenticated = true
++					}
++				}
++				if entry.DeviceID == deviceID {
++					authenticated = true
++				}
++			}
++		}
++		dbMutex.Unlock()
++		if !authenticated {
++			return
++		}
+ 		connDeviceID = deviceID
+ 
+ 		clientConn.SetReadDeadline(time.Now().Add(5 * time.Minute))
+@@ -2152,6 +2182,9 @@
+ 		firstPacket = buf[:n]
+ 	}
+ 
++	if !authenticated {
++		return
++	}
+ 	// WG прокси
+ 	wgConn, err := net.Dial("udp", wgEndpoint)
+ 	if err != nil {
+@@ -2269,6 +2302,7 @@
+ 	PayloadType uint8
+ 	PaddingMax  int
+ }
++
+ var aeadCache sync.Map
+ 
+ func getAEAD(key []byte) (cipher.AEAD, error) {
