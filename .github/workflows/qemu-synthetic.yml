@@ -2,6 +2,11 @@
 # (paths filter) or manually. Pure Go user-mode emulation of the
 # cross-built binaries; no network, no devices, no credentials, and never
 # a substitute for physical acceptance (KeenWhite issue #3).
+#
+# Build steps here are AUTHORITATIVE and unmasked: a real WDTT build
+# failure fails the job. QEMU user-mode is NOT the Keenetic emulator and
+# NOT physical acceptance. The nested WDTT module (transports/wdtt/go_client)
+# pins its own Go version, so it is built with its own toolchain.
 name: QEMU synthetic (transports)
 on:
   pull_request:
@@ -14,7 +19,7 @@ permissions:
 jobs:
   qemu-user-smoke:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -34,7 +39,28 @@ jobs:
           qemu-aarch64-static ./dist/keenwhite-linux-arm64 validate -catalog examples/providers.json
           qemu-mipsel-static ./dist/keenwhite-linux-mipsle version
           qemu-mipsel-static ./dist/keenwhite-linux-mipsle validate -catalog examples/providers.json
-      - name: Synthetic smoke of imported WDTT sources (build-only, offline)
+      - name: Install Go for the nested WDTT module (its own go.mod pins the version)
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: transports/wdtt/go_client/go.mod
+          cache: false
+      - name: Build imported WDTT go_client (arm64) — authoritative, unmasked
+        working-directory: transports/wdtt/go_client
         run: |
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o /dev/null ./transports/wdtt/go_client 2>/dev/null \
-            || echo "go_client build skipped: platform-specific sources (documented in WDTT-SOURCE-LEDGER.md)"
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o /tmp/wdtt-client-arm64 .
+          test -s /tmp/wdtt-client-arm64
+          sha256sum /tmp/wdtt-client-arm64
+      - name: Build imported WDTT go_client (mipsle) — authoritative, unmasked
+        working-directory: transports/wdtt/go_client
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -trimpath -o /tmp/wdtt-client-mipsle .
+          test -s /tmp/wdtt-client-mipsle
+          sha256sum /tmp/wdtt-client-mipsle
+      - name: Record explicit build evidence
+        if: always()
+        run: |
+          {
+            echo "## WDTT go_client build (authoritative, unmasked)"
+            echo "- arm64 and mipsle build steps above are hard gates; no skip paths exist."
+            echo "- QEMU user-mode is NOT the Keenetic emulator and NOT physical acceptance."
+          } >> "$GITHUB_STEP_SUMMARY"

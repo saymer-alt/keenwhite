@@ -154,6 +154,12 @@ func ValidateManifest(m Manifest) []Problem {
 		}
 	}
 	if m.Evidence.MeasuredAt != nil {
+		// A future-dated measurement is corrupt (clock skew or forgery):
+		// reject it outright; it can never back an E2E claim (issue #20).
+		if m.Evidence.MeasuredAt.After(time.Now().Add(5 * time.Minute)) {
+			p = append(p, Errorf("evidence.measured_at",
+				"measurement is dated in the future; corrupt evidence is rejected"))
+		}
 		ttl := DefaultMeasurementTTL
 		if m.Evidence.MeasurementTTLSeconds > 0 {
 			ttl = time.Duration(m.Evidence.MeasurementTTLSeconds) * time.Second
