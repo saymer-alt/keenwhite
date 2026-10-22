@@ -12,6 +12,9 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/saymer-alt/keenwhite/internal/contract"
 )
 
 const APIVersion = "keenwhite.dev/v0alpha1"
@@ -37,6 +40,10 @@ type Provider struct {
 	KASCombinedMinRAMMB *int   `json:"kas_combined_min_ram_mb"`
 	Notes               string `json:"notes,omitempty"`
 	EvidenceURL         string `json:"evidence_url,omitempty"`
+	// EvidenceMeasuredAt is optional: the ORIGINAL date of the measurement
+	// backing an E2E_VERIFIED claim. Absent = WARNING (not a hard error, so
+	// pre-0.2.1 catalogs stay valid).
+	EvidenceMeasuredAt *time.Time `json:"evidence_measured_at,omitempty"`
 }
 
 // Load only reads up to one megabyte and forbids unknown fields and trailing JSON.
@@ -108,6 +115,24 @@ func Validate(c Catalog) []string {
 		}
 		if (p.TCP == "E2E_VERIFIED" || p.UDP == "E2E_VERIFIED") && p.EvidenceURL == "" {
 			problems = append(problems, prefix+"E2E_VERIFIED requires evidence_url")
+		}
+		// Unified evidence freshness (issue #4): identical rules to the
+		// provider manifest. A missing date is a WARNING (backward
+		// compatible); a future or stale date is an error.
+		for _, lvl := range []string{p.TCP, p.UDP} {
+			if lvl != "E2E_VERIFIED" {
+				continue
+			}
+			_, findings := contract.CheckEvidence(lvl, p.EvidenceURL,
+				p.EvidenceMeasuredAt, 0, time.Now())
+			for _, fnd := range findings {
+				switch fnd.Code {
+				case "E2E_NO_MEASUREMENT":
+					problems = append(problems, prefix+"WARNING: E2E_VERIFIED without a measurement date cannot be re-checked for freshness")
+				default:
+					problems = append(problems, prefix+string(fnd.Severity)+": "+fnd.Message)
+				}
+			}
 		}
 		if p.KASCombinedMinRAMMB != nil && (*p.KASCombinedMinRAMMB < 64 || *p.KASCombinedMinRAMMB > 16384) {
 			problems = append(problems, prefix+"invalid combined RAM floor")

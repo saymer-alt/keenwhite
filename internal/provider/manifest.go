@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/saymer-alt/keenwhite/internal/catalog"
+	"github.com/saymer-alt/keenwhite/internal/contract"
 )
 
 // ManifestVersion is the only manifest major version this build accepts.
@@ -142,36 +143,25 @@ func ValidateManifest(m Manifest) []Problem {
 		p = append(p, Errorf("socks.udp", "invalid evidence level %q", m.Socks.UDP))
 	}
 	// E2E claims need a fresh, referenced measurement (MT-002 semantics:
-	// stale results cannot claim PASS, and pid/listener facts are not E2E).
-	if m.Socks.TCP == EvidenceE2EVerified || m.Socks.UDP == EvidenceE2EVerified {
-		if m.Evidence.EvidenceURL == "" {
-			p = append(p, Errorf("evidence.evidence_url",
-				"E2E_VERIFIED requires evidence_url"))
-		}
-		if m.Evidence.MeasuredAt == nil {
-			p = append(p, Errorf("evidence.measured_at",
-				"E2E_VERIFIED requires measured_at"))
-		}
-	}
-	if m.Evidence.MeasuredAt != nil {
-		// A future-dated measurement is corrupt (clock skew or forgery):
-		// reject it outright; it can never back an E2E claim (issue #20).
-		if m.Evidence.MeasuredAt.After(time.Now().Add(5 * time.Minute)) {
-			p = append(p, Errorf("evidence.measured_at",
-				"measurement is dated in the future; corrupt evidence is rejected"))
-		}
-		ttl := DefaultMeasurementTTL
-		if m.Evidence.MeasurementTTLSeconds > 0 {
-			ttl = time.Duration(m.Evidence.MeasurementTTLSeconds) * time.Second
-		}
-		if time.Since(*m.Evidence.MeasuredAt) > ttl {
-			// Downgrade, not silence: stale measurement cannot back E2E.
-			if m.Socks.TCP == EvidenceE2EVerified || m.Socks.UDP == EvidenceE2EVerified {
-				p = append(p, Errorf("evidence.measured_at",
-					"measurement is older than its TTL (%s); stale results cannot claim E2E_VERIFIED", ttl))
-			} else {
-				p = append(p, Warnf("evidence.measured_at", "measurement is older than its TTL (%s)", ttl))
+	// stale results cannot claim PASS, pid/listener facts are not E2E).
+	// Single source of truth: internal/contract.CheckEvidence — the catalog,
+	// the provider contract and the MT compatibility layer evaluate
+	// identical rules now (issue #4).
+	for _, axis := range []struct {
+		name  string
+		level Evidence
+	}{
+		{"tcp", m.Socks.TCP}, {"udp", m.Socks.UDP},
+	} {
+		_, findings := contract.CheckEvidence(
+			string(axis.level), m.Evidence.EvidenceURL, m.Evidence.MeasuredAt,
+			m.MeasurementTTL(), time.Now())
+		for _, f := range findings {
+			sev := "error"
+			if f.Severity == contract.SeverityWarning {
+				sev = "warning"
 			}
+			p = append(p, Problem{Severity: sev, Field: f.Field, Message: f.Message})
 		}
 	}
 	if m.Lifecycle.HardStopSeconds <= 0 {
