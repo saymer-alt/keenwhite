@@ -4,7 +4,7 @@
 
 | Направление | KeenWhite Issue |
 |---|---|
-| WDTT GPL source history and exact PR42 provenance | [#2](https://github.com/saymer-alt/keenwhite/issues/2) — реализовано в Draft [PR #1](https://github.com/saymer-alt/keenwhite/pull/1) (не слит, ждёт приёмки) |
+| WDTT GPL source history and exact PR42 provenance | [#2](https://github.com/saymer-alt/keenwhite/issues/2) — SOURCE IMPORTED через [PR #1](https://github.com/saymer-alt/keenwhite/pull/1), CI PASS; полевые тесты отдельно [#3](https://github.com/saymer-alt/keenwhite/issues/3) |
 | WDTT physical acceptance and security (18/1 + UDP + hard stop) | [#3](https://github.com/saymer-alt/keenwhite/issues/3) |
 | MT-001 / MT-002 contract and semantic negative checks | [#4](https://github.com/saymer-alt/keenwhite/issues/4) |
 | OpenFlux independent-carrier and DNS architecture | [#5](https://github.com/saymer-alt/keenwhite/issues/5) |
@@ -25,3 +25,5 @@
 | Link generators / subscription/HWID | [link-generators](https://github.com/saymer-alt/link-generators) | Keep UI/config editing separate; optional import/export API later |
 
 **Cutover definition**: Once KeenWhite has merged the approved core, a provenance-preserving WDTT module, and dedicated CI, NEW WHITELIST TRANSPORT R&D issues go into KeenWhite. KAS issues remain for installer/product boundary and any unresolved historical PR; old WDTT repo issues may remain open until status is reconciled, then close with links rather than deleting.
+
+**Cutover update 2026-10-22:** historical WDTT source now lives in KeenWhite main, so *new* first-party white-list transport engineering belongs in KeenWhite Issues and PRs. Original WDTT Suite remains readable and retains PRs/releases/27 research branches; no changes to router installations. Remaining hardware/admission gates: #3 and #6.

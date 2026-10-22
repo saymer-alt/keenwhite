@@ -2,7 +2,7 @@
 
 **Independent white-list transport platform for Keenetic / Netcraze**
 
-> Статус: **0.1.0-dev / экспериментальный проект с планом миграции WDTT**. Это новый самостоятельный репозиторий, не GitHub fork. Пока реализованы локальная проверка каталога транспортов и read-only Doctor. **Рабочий VPN-туннель и WDTT-код ещё НЕ включены в этот пакет (main); перенос исходников подготовлен в Draft [PR #1](https://github.com/saymer-alt/keenwhite/pull/1) с сохранением полной Git-истории и GPL-лицензии — слияние только после приёмки владельцем.**
+> Статус: **0.1.0-dev / экспериментальный проект**. Собственное Go-ядро выполняет offline-валидацию и read-only Doctor. **Исходники WDTT перенесены в `transports/wdtt/` и включены в `main` через [PR #1](https://github.com/saymer-alt/keenwhite/pull/1) с сохранением истории и GPL-3.0.** Изолированный CI клиентских/серверных Go-модулей и ARM64/MIPSel QEMU прошёл; **реального E2E на Keenetic и продуктового релиза KeenWhite пока НЕТ**.
 
 KeenWhite — **наш единый поддерживаемый проект для сетевых транспортов в ограниченных сетях Keenetic/Netcraze**. Вместо множества самостоятельных экспериментальных форков здесь будут находиться собственное программное ядро, обслуживаемые транспортные модули (сначала WDTT), адаптеры, тесты, диагностика и общая дорожная карта. Различные сетевые протоколы не обязаны объединяться в один бинарник: самостоятельный репозиторий и единая система разработки совместимы с раздельными процессами и лицензиями.
 
@@ -12,9 +12,9 @@ KeenWhite — **наш единый поддерживаемый проект д
 
 | Проект | За что отвечает |
 |---|---|
-| **KeenWhite** | **Единый продукт и главный репозиторий**: собственный runtime/CLI, WDTT после поэтапного исторического импорта, другие поддерживаемые адаптеры, контракты, тесты, релизы и roadmap |
+| **KeenWhite** | **Единый продукт и главный репозиторий**: оригинальный offline CLI, импортированный с историей WDTT GPL-3.0, будущие независимые адаптеры, контракты, CI и roadmap |
 | **Keenetic Auto Setup (KAS)** | Установка и удаление KeenWhite как **необязательного** компонента, обновление, интеграция с существующим процессом supervisor |
-| **WDTT Suite** | Исходный GPL-3.0 репозиторий и лабораторный релиз; **первый кандидат на исторический перенос в KeenWhite**, затем архив происхождения и предыдущих PR, без удаления до полной приёмки |
+| **WDTT Suite** | Исходный GPL-3.0 форк, лабораторные бинарники и прежние Issue/PR; остаётся архивом происхождения и обновлений. Не удалять до полевой приёмки |
 | **OpenFlux** | Следующий транспорт; сначала собственный адаптер в KeenWhite, заимствование GPL-кода — только при отдельном решении с сохранением авторства и лицензии |
 | **link-generators / Config Studio** | Создание и проверка пользовательских профилей, не runtime |
 | **VPS-проекты** | Серверная сторона транспортов и инфраструктура выходных узлов |
@@ -24,17 +24,17 @@ KeenWhite — **наш единый поддерживаемый проект д
 ## План концентрации всей разработки в KeenWhite
 
 1. Опубликовать **новый** `saymer-alt/keenwhite`, без статуса fork.
-2. Перенести **WDTT Suite PR #42** с полной историей в `transports/wdtt/` на отдельной миграционной ветке; до ревью сам WDTT не меняется.
+2. **Выполнено:** WDTT PR #42 без squash перенесён в [`transports/wdtt/`](transports/wdtt/) через [KeenWhite PR #1](https://github.com/saymer-alt/keenwhite/pull/1), SHA источника `d39f9dad9163`; независимые вложенные Go/QEMU тесты — PASS. Поддержка на железе ещё не доказана.
 3. Сохранить в KeenWhite реестр всех WDTT branches/issues/PR/release и экспериментов, но не объявлять 27 параллельных веток стабильными.
 4. Сделать собственный адаптер и методы `status/doctor/start/stop` после ревью source/CPU/RAM/UDP и оборудования.
 5. Переносить проверенные архитектурные решения из OpenFlux/CSQTT/Swinter/WhiteTransport в новые самостоятельные адаптеры; лицензии каждого компонента соблюдать.
 6. KAS после проверки устанавливает **один самостоятельный продукт KeenWhite**, а не содержит его код.
 
-**Подготовленные материалы миграции:** [пошаговый план](docs/migration/MIGRATION-PLAN.md), [полный список WDTT-веток и точных исходных ревизий](docs/migration/WDTT-SOURCE-LEDGER.md), [лицензии и авторство](docs/OWNERSHIP-AND-LICENSING.md), [скрипт безопасного исторического импорта](scripts/import-wdtt-history.sh), [карта единого backlog](docs/migration/BACKLOG-MAP.md) → Issues [#2](https://github.com/saymer-alt/keenwhite/issues/2) [#3](https://github.com/saymer-alt/keenwhite/issues/3) [#4](https://github.com/saymer-alt/keenwhite/issues/4) [#5](https://github.com/saymer-alt/keenwhite/issues/5) [#6](https://github.com/saymer-alt/keenwhite/issues/6).
+**Материалы и подтверждения миграции:** [пошаговый план](docs/migration/MIGRATION-PLAN.md), [полный список WDTT-веток и точных исходных ревизий](docs/migration/WDTT-SOURCE-LEDGER.md), [лицензии и авторство](docs/OWNERSHIP-AND-LICENSING.md), [скрипт безопасного исторического импорта](scripts/import-wdtt-history.sh), [карта единого backlog](docs/migration/BACKLOG-MAP.md) → Issues [#2](https://github.com/saymer-alt/keenwhite/issues/2) [#3](https://github.com/saymer-alt/keenwhite/issues/3) [#4](https://github.com/saymer-alt/keenwhite/issues/4) [#5](https://github.com/saymer-alt/keenwhite/issues/5) [#6](https://github.com/saymer-alt/keenwhite/issues/6).
 
 ## Начало работы (только локальные проверки)
 
-Нужен Go 1.22+ на рабочей машине. На роутер устанавливать пока не нужно.
+Для **KeenWhite CLI** нужен Go 1.22+; **WDTT-вложенные модули используют Go 1.25/1.26 и собираются отдельно**. На роутер KeenWhite пока не устанавливать.
 
 ```sh
 go test ./...
@@ -45,6 +45,16 @@ go run ./cmd/keenwhite doctor -catalog examples/providers.json -json
 ```
 
 `validate` проверяет строгость JSON, ID, типы evidence, адреса **только 127.0.0.1**, порты, дубликаты, конфликт bind и policy-метаданные. `doctor` **не выполняет сетевых запросов, не открывает сокеты, не запускает transport, не читает приватные профили и не правит маршруты**. По этой причине поле TCP/UDP E2E всегда `NOT_TESTED`.
+
+### Проверка WDTT-бинарника без запуска
+
+Собственная команда KeenWhite `verify-wdtt` сверяет ELF-архитектуру и SHA256 с **независимо полученной** контрольной суммой, не запускает файл и не открывает соединения:
+
+```sh
+go run ./cmd/keenwhite verify-wdtt -file /secure/wt-client-linux-arm64 -sha256 YOUR_TRUSTED_64_HEX_SHA256 -arch arm64 -json
+```
+
+Проверка идентичности бинарника **не доказывает** работу транспорта, TCP/UDP E2E, отсутствие утечек или авторство источника хеша. [Ограничения и инструкция](docs/WDTT-ARTIFACT-PREFLIGHT.md).
 
 ### Сборка под Keenetic (пока только проверка кросс-компиляции)
 
@@ -88,8 +98,8 @@ make crossbuild
 
 ## Лицензия
 
-Оригинальный исходный код KeenWhite — MIT (см. [LICENSE](LICENSE)). **Когда WDTT будет перенесён в `transports/wdtt/`, его GPL-3.0 код сохранит GPL и notices в собственном подкаталоге.** Не считать, что корневой MIT автоматически лицензирует WDTT либо OpenFlux.
+Оригинальный код KeenWhite — MIT ([LICENSE](LICENSE)). **Импортированный `transports/wdtt/` и производные изменения его исходников — GPL-3.0 с сохранёнными оригинальной лицензией и авторством.** Корневой MIT не перекрывает GPL; единый бинарник/линковка требуют дополнительной лицензионной проверки.
 
 ---
 
-*EN: KeenWhite is an independent, non-fork, white-list transport platform for Keenetic/Netcraze. It will consolidate first-party code and proven WDTT development with preserved GPL provenance. Its current implementation is offline-only; neither live WDTT operation nor hardware acceptance is included. KAS remains a separate optional installer.*
+*EN: KeenWhite is an independent, non-fork toolkit for Keenetic/Netcraze. The original core is MIT; GPL-3.0 WDTT source was imported with preserved ancestry. Code build and QEMU tests passed, but real router/UDP acceptance and a stable product release are pending. KAS remains a separate optional installer.*

@@ -1,0 +1,52 @@
+name: awgm client release
+
+# Тег awgm-client-* — только наш префикс. Апстримовые vX.Y.Z и v1.4.0-beta
+# под него не попадают, а компонент читается прямо из имени тега:
+# у репозитория две ветки (awg-client, awg-server) с разными артефактами.
+on:
+  push:
+    tags: ['awgm-client-*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go_client/go.mod
+
+      # Тесты идут ДО сборки: провалившийся страж обязан остановить релиз, а не
+      # быть замеченным после выкладки артефактов. -short выключает единственный
+      # сетевой тест апстрима (DoH), чтобы релиз не зависел от чужого резолвера.
+      - name: Test go_client
+        run: |
+          set -e
+          cd go_client
+          # gofmt сам по себе не даёт ненулевого кода — сравниваем вывод.
+          test -z "$(gofmt -l .)" || { gofmt -l .; echo 'gofmt: дерево не отформатировано'; exit 1; }
+          go vet ./...
+          go test -short -race ./...
+
+      - name: Build router binaries
+        run: |
+          set -e
+          mkdir -p dist
+          cd go_client
+          build() { # $1 goarch  $2 имя артефакта  $3 доп. env
+            env GOOS=linux GOARCH="$1" CGO_ENABLED=0 $3 \
+              go build -trimpath -buildvcs=false -ldflags="-s -w" -o "../dist/$2" .
+          }
+          # Имена трогать нельзя: на них смотрят пины в internal/wdtt/install.go.
+          build arm64  wt-client-linux-arm64             ""
+          build mipsle wt-client-linux-mipsle-softfloat  "GOMIPS=softfloat"
+          build mips   wt-client-linux-mips-softfloat    "GOMIPS=softfloat"
+          cd ../dist && sha256sum * > checksums.txt && cat checksums.txt
+
+      - name: Release
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --notes "wt-client для Keenetic (awg-manager), режим -mode rawtun"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
