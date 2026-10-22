@@ -83,6 +83,9 @@ func New(m provider.Manifest, runner Runner, clk Clock, mem MemAvailableMB) (*Ad
 	if runner == nil {
 		return nil, errors.New("runner is required (mock or granted lab; real execution is forbidden in this stage)")
 	}
+	if m.Provider != "wdtt" {
+		return nil, fmt.Errorf("adapter identity mismatch: the WDTT adapter only accepts the 'wdtt' provider, got %q", m.Provider)
+	}
 	if runner.Kind() == provider.ExecutionReal {
 		return nil, provider.ErrForbiddenByPolicy
 	}
@@ -112,6 +115,10 @@ func (a *Adapter) APIVersion() string { return provider.APIVersionV1 }
 // run it — bypassing Validate bypasses nothing (task #11 B1).
 func (a *Adapter) validateAll() []provider.Problem {
 	problems := provider.ValidateManifest(a.manifest)
+	if a.manifest.Provider != "wdtt" {
+		problems = append(problems, provider.Errorf("provider",
+			"adapter identity mismatch: the WDTT adapter only accepts the 'wdtt' provider"))
+	}
 	if err := checkProfile(&a.manifest); err != nil {
 		problems = append(problems, provider.Errorf("profile", "%v", err))
 	}
@@ -125,6 +132,47 @@ func (a *Adapter) validateAll() []provider.Problem {
 // never parses profile VALUES into logs or plans.
 func (a *Adapter) Validate(_ context.Context) []provider.Problem {
 	return a.validateAll()
+}
+
+// fullAdmission is the COMPLETE pre-launch check set, shared verbatim by
+// Prepare and Start (task #12 A1): manifest semantics + provider identity +
+// profile + hard-stop policy, artifact existence/integrity (SHA256 + ELF
+// architecture), resource admission, and loopback SOCKS port availability.
+// Start runs this immediately before spawning, so a stale Prepare can never
+// authorise a launch whose world has changed. Note: the bind probe is
+// necessarily point-in-time; exclusive port reservation until the transport
+// binds requires descriptor passing and is a documented future design.
+func (a *Adapter) fullAdmission() error {
+	for _, p := range a.validateAll() {
+		if p.Severity == "error" {
+			return fmt.Errorf("admission failed: %s: %s", p.Field, p.Message)
+		}
+	}
+	if _, err := artifact.VerifyWDTT(a.manifest.Artifact.Path, a.manifest.Artifact.SHA256, a.manifest.Artifact.Arch); err != nil {
+		return fmt.Errorf("artifact verification: %w", err)
+	}
+	if _, _, err := a.checkResources(); err != nil {
+		return err
+	}
+	if err := checkSocksPort(a.manifest.Socks.Bind); err != nil {
+		return fmt.Errorf("socks bind check: %w", err)
+	}
+	return checkWDTTPolicy(&a.manifest)
+}
+
+// checkResources probes MemAvailable (injected) against the provider floor.
+func (a *Adapter) checkResources() (int, provider.Resources, error) {
+	memMB, err := a.mem()
+	if err != nil {
+		return 0, provider.Resources{}, fmt.Errorf("memory probe: %w", err)
+	}
+	res := provider.Resources{MemAvailableMB: memMB, Admitted: true}
+	if need := a.manifest.Resources.MinMemAvailableMB; need > 0 && memMB < need {
+		res.Admitted = false
+		res.Reason = fmt.Sprintf("needs %dMB available, device has %dMB", need, memMB)
+		return memMB, res, fmt.Errorf("resource admission failed: %s", res.Reason)
+	}
+	return memMB, res, nil
 }
 
 // checkWDTTPolicy pins the provider-specific safety policy: the WDTT lab
@@ -180,19 +228,23 @@ func (a *Adapter) Prepare(_ context.Context) (provider.PrepareResult, error) {
 	var res provider.PrepareResult
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	// B1: admission is mandatory here, order-independent.
-	for _, p := range a.validateAll() {
-		if p.Severity == "error" {
-			a.state = provider.StateFailed
-			return res, fmt.Errorf("admission failed: %s: %s", p.Field, p.Message)
-		}
-	}
+	// A2 (task #12): invalidate the previous grant BEFORE anything else —
+	// a failed re-Prepare must leave no usable StartPlan behind.
+	a.plan = provider.StartPlan{}
+	a.preparedOK = false
+	// A live session is refused FIRST and leaves its state untouched (A2.8).
 	if a.proc != nil {
 		select {
 		case <-a.proc.Done():
 		default:
 			return res, errors.New("Prepare refused: provider is running; stop it first")
 		}
+	}
+	// B1/A1: admission is mandatory here, order-independent, and identical
+	// to what Start re-runs.
+	if err := a.fullAdmission(); err != nil {
+		a.state = provider.StateFailed
+		return res, err
 	}
 	a.state = provider.StatePreparing
 
@@ -202,17 +254,10 @@ func (a *Adapter) Prepare(_ context.Context) (provider.PrepareResult, error) {
 		return res, fmt.Errorf("artifact verification: %w", err)
 	}
 
-	memMB, err := a.mem()
+	_, memRes, err := a.checkResources()
 	if err != nil {
 		a.state = provider.StateFailed
-		return res, fmt.Errorf("memory probe: %w", err)
-	}
-	memRes := provider.Resources{MemAvailableMB: memMB, Admitted: true}
-	if need := a.manifest.Resources.MinMemAvailableMB; need > 0 && memMB < need {
-		memRes.Admitted = false
-		memRes.Reason = fmt.Sprintf("needs %dMB available, device has %dMB", need, memMB)
-		a.state = provider.StateFailed
-		return res, fmt.Errorf("resource admission failed: %s", memRes.Reason)
+		return res, err
 	}
 
 	if err := checkSocksPort(a.manifest.Socks.Bind); err != nil {
@@ -293,6 +338,12 @@ func (a *Adapter) verifyPlanIntegrity() error {
 func (a *Adapter) Start(ctx context.Context) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	// A1: re-run the FULL admission (artifact integrity, resources, port,
+	// manifest, policy) immediately before spawning — never trust a stale
+	// Prepare. No external command runs unless every check passes.
+	if err := a.fullAdmission(); err != nil {
+		return err
+	}
 	if err := a.verifyPlanIntegrity(); err != nil {
 		return err
 	}
@@ -402,8 +453,16 @@ func (a *Adapter) Stop(ctx context.Context) error {
 		select {
 		case <-proc.Done():
 		case <-time.After(2 * time.Second):
+			a.mu.Lock()
+			a.state = provider.StateFailed
+			a.exitErr = ErrStopIncomplete
+			a.mu.Unlock()
 			return ErrStopIncomplete
 		case <-ctx.Done():
+			a.mu.Lock()
+			a.state = provider.StateFailed
+			a.exitErr = fmt.Errorf("stop cancelled by context: %w", ctx.Err())
+			a.mu.Unlock()
 			return fmt.Errorf("stop cancelled by context: %w", ctx.Err())
 		}
 	case <-ctx.Done():
