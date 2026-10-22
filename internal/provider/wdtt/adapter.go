@@ -262,7 +262,6 @@ func (a *Adapter) watchDeadline(_ context.Context, proc Process, deadline time.T
 	ch := a.clock.After(ttl)
 	select {
 	case <-ch:
-		a.deadline = deadline
 		a.stopForHardStop(proc)
 	case <-proc.Done():
 	}
