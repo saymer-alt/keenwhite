@@ -667,3 +667,7 @@ func (s *LogScrubber) ScanLines(r *os.File) {
 		s.WriteLine(sc.Text())
 	}
 }
+
+// ManifestForTest returns the adapter's validated manifest for tests and
+// harness scenarios. Test-only seam; production code uses the contract API.
+func (a *Adapter) ManifestForTest() *provider.Manifest { return &a.manifest }
