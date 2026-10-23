@@ -1,4 +1,4 @@
-# Multi-Provider Design (WDTT + OpenFlux + будущие) — KeenWhite 0.2.1-dev
+# Multi-Provider Design (WDTT + OpenFlux + будущие) — KeenWhite 0.2.2-dev
 
 Архитектурные обязательства для нескольких провайдеров в одном KeenWhite
 (задание №13 этап E). Реализация переключения transport'ов сейчас НЕ

@@ -376,6 +376,15 @@ func TestMT001_UnknownSchemaVersionStillRefused(t *testing.T) {
 // shape, overridden by mut.
 func mtMinimalDoc(t *testing.T, mut func(w map[string]any)) []byte {
 	t.Helper()
+	b, err := mtMinimalWire(mut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+// mtMinimalWire is the t-free core, usable from fuzz seeds.
+func mtMinimalWire(mut func(w map[string]any)) ([]byte, error) {
 	w := map[string]any{
 		"schema_version":  1,
 		"provider_id":     "wdtt",
@@ -404,9 +413,5 @@ func mtMinimalDoc(t *testing.T, mut func(w map[string]any)) []byte {
 	if mut != nil {
 		mut(w)
 	}
-	b, err := json.Marshal(w)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return b
+	return json.Marshal(w)
 }

@@ -80,6 +80,12 @@ MT-001 `capabilities` — статические атрибуты исходни
   понижает E2E до `UNKNOWN`; `SOURCE_CONFIRMED` никогда не повышается.
 - `CheckProviderSet(refs)` — дубликаты Provider ID и конфликты SOCKS-биндов
   по всему набору провайдеров.
+- `catalog.ValidateDetailed(c, now)` (issue #32) — типизированные находки
+  каталога: структурные нарушения = ERROR (exit 1), непроверяемые E2E-заявления
+  = WARNING с даунгрейдом эффективного уровня в `UNKNOWN` (exit 0, видимое
+  предупреждение; политика «accept, downgrade, warn»). TCP/UDP — независимо,
+  через тот же `CheckEvidence`. `catalog.Validate` остаётся строковой
+  проекцией для совместимости.
 - `ParseMTDocument(doc, now)` — полный фиделити-разбор MT-001 (см. §1.2);
   `ParseMTProviderManifest(doc, now)` — совместимая обёртка: неизвестная
   `schema_version` = отказ; каждое непереносимое поле — WARNING (никакой
