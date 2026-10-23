@@ -3,6 +3,9 @@ package catalog
 import (
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/saymer-alt/keenwhite/internal/contract"
 )
 
 func valid() Catalog {
@@ -52,10 +55,27 @@ func TestIDDuplicate(t *testing.T) {
 }
 
 func TestE2ERequiresEvidence(t *testing.T) {
+	// Issue #32 policy: a legacy E2E_VERIFIED without a URL keeps the
+	// document structurally valid (WARNING, not ERROR) but its effective
+	// level is downgraded to UNKNOWN — never echoed back as verified.
 	c := valid()
 	c.Providers[0].TCP = "E2E_VERIFIED"
-	if !contains(Validate(c), "requires evidence_url") {
-		t.Fatal("false E2E evidence accepted")
+	findings, effs := ValidateDetailed(c, time.Now())
+	found := false
+	for _, f := range findings {
+		if f.Severity == contract.SeverityWarning && f.Code == "E2E_NO_URL" && strings.HasSuffix(f.Field, ".tcp") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("E2E_NO_URL warning required, got %+v", findings)
+	}
+	if len(effs) != 1 || effs[0].TCP != contract.EvidenceUnknown || effs[0].UDP != "UNKNOWN" {
+		t.Fatalf("effective TCP must be downgraded to UNKNOWN: %+v", effs)
+	}
+	// The string projection still reports the finding (compat callers see it).
+	if !contains(Validate(c), "E2E_NO_URL") && !contains(Validate(c), "evidence URL") {
+		t.Fatal("string projection lost the finding")
 	}
 }
 
