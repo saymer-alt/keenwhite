@@ -84,9 +84,14 @@ func TestParseMT_UnknownSchemaVersionRefused(t *testing.T) {
 	}
 }
 
-func TestParseMT_ValidMapping(t *testing.T) {
+// TestParseMT_PreFixShapeRejected guards the task-14 stage-A repair: the
+// pre-fix converter accepted a WRONG MT-001 shape (architecture as a string,
+// capabilities keyed tcp/udp with runtime evidence levels). That shape is
+// not provider-v0.schema.json and must be refused now. The faithful shape is
+// covered by mtfidelity_test.go against the original fixtures.
+func TestParseMT_PreFixShapeRejected(t *testing.T) {
 	sha := strings.Repeat("a", 64)
-	doc := []byte(`{
+	oldShape := []byte(`{
 		"schema_version":1,
 		"provider_id":"wdtt",
 		"adapter_version":"0.1.0",
@@ -100,59 +105,39 @@ func TestParseMT_ValidMapping(t *testing.T) {
 		"artifact_provenance":{"sha256":"` + sha + `","source_commit":"d39f9dad9163","artifact_path":"/opt/bin/worker"},
 		"configuration_reference":"docs/profile-format.md"
 	}`)
-	m, f, err := ParseMTProviderManifest(doc, now)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
+	if _, _, err := ParseMTProviderManifest(oldShape, now); err == nil {
+		t.Fatal("the pre-fix (string architecture) shape must be rejected: it is not MT-001")
 	}
-	if m.Provider != "wdtt" || m.SocksBind != "127.0.0.1:1081" || m.Arch != "arm64" ||
-		m.TCP != EvidenceBuildConfirmed || m.UDP != EvidenceSourceConfirmed ||
-		m.ArtifactSHA256 != sha || m.MinMemMB != 512 {
-		t.Fatalf("bad mapping: %+v", m)
-	}
-	// No silent field loss: every unmapped MT field must be reported.
-	text := ""
-	for _, x := range f {
-		text += x.Code + ";"
-	}
-	for _, code := range []string{"MT_ADAPTER_VERSION", "MT_SERVER_WIRE", "MT_SERVER_CLASS", "MT_SOURCE_COMMIT", "MT_MEASURED_FLAG"} {
-		if !strings.Contains(text, code) {
-			t.Fatalf("missing warning %s in %s", code, text)
-		}
-	}
-}
-
-func TestParseMT_E2EDowngradedNotUpgraded(t *testing.T) {
-	sha := strings.Repeat("a", 64)
-	doc := []byte(`{
+	// Runtime evidence levels were never valid MT-001 static levels either.
+	noStatic := []byte(`{
 		"schema_version":1,"provider_id":"wdtt","adapter_version":"0.1.0",
-		"server_wire":"wdtt","server_class":"x","architecture":"arm64",
-		"capabilities":{"tcp":{"code":"E2E_VERIFIED","build":"PRESENT"},
-		                "udp":{"code":"SOURCE_CONFIRMED","build":"PRESENT"}},
+		"server_wire":"wdtt-specific","server_class":"wdtt-compatible-exit",
+		"architecture":[{"arch":"aarch64","abi":"musl-static"}],
+		"capabilities":{"socks_tcp":{"code":"E2E_VERIFIED","build":"PRESENT"}},
 		"inbound_bind":"127.0.0.1:1081",
-		"resource_requirements":{"admission_min_mb":null,"admission_source":"none","measured":false},
+		"resource_requirements":{"admission_min_mb":null,"admission_source":null,"measured":false,"measurement_ref":null},
 		"artifact_provenance":{"sha256":"` + sha + `","source_commit":"abcdef1234567","artifact_path":"/w"},
 		"configuration_reference":"docs/x.md"
 	}`)
-	m, f, err := ParseMTProviderManifest(doc, now)
+	conv, err := ParseMTDocument(noStatic, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.TCP != EvidenceUnknown {
-		t.Fatalf("unbacked MT E2E must downgrade to UNKNOWN, got %s", m.TCP)
+	if conv.Parsed || conv.Runnable {
+		t.Fatal("E2E_VERIFIED is not an MT-001 static level and must not parse")
 	}
-	if m.UDP != EvidenceSourceConfirmed {
-		t.Fatalf("SOURCE_CONFIRMED must be carried verbatim, got %s", m.UDP)
-	}
-	found := false
-	for _, x := range f {
-		if x.Code == "MT_E2E_UNBACKED" {
-			found = true
+	// Null floor still maps to 0 (no floor), never to a made-up number —
+	// preserved behaviour from task #13.
+	floor := mtMinimalDoc(t, func(w map[string]any) {
+		w["resource_requirements"] = map[string]any{
+			"admission_min_mb": nil, "admission_source": nil,
+			"measured": false, "measurement_ref": nil,
 		}
+	})
+	m, _, err := ParseMTProviderManifest(floor, now)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !found {
-		t.Fatal("E2E downgrade must be reported")
-	}
-	// Null floor maps to 0 (no floor), never to a made-up number:
 	if m.MinMemMB != 0 {
 		t.Fatalf("null admission_min_mb must map to 0, got %d", m.MinMemMB)
 	}
