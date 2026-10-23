@@ -92,7 +92,12 @@ func (s *Store) withinRoot(path string) error {
 // ensureDirSafe creates or verifies every directory component under the
 // root WITHOUT following symlinks: a component that is a symlink (or not a
 // directory) aborts the operation instead of being written through.
+// WRITE-ONLY: it creates missing directories as a side effect; read paths
+// must use verifyReadPath instead (task 16 stage B1).
 func (s *Store) ensureDirSafe(relSlash string) error {
+	if err := s.verifyRoot(); err != nil {
+		return err
+	}
 	cur := s.root
 	for _, part := range strings.Split(relSlash, "/") {
 		cur = filepath.Join(cur, part)
@@ -120,6 +125,61 @@ func (s *Store) ensureDirSafe(relSlash string) error {
 		default:
 			return fmt.Errorf("stat store path: %w", err)
 		}
+	}
+	return nil
+}
+
+// verifyReadPath validates every component of a record path READ-ONLY: it
+// never creates anything, refuses symlinks and wrong types at every level
+// (including the root itself), and refuses when a required directory is
+// missing (task 16 stage B1). relSlash uses "/" separators and names the
+// DIRECTORIES leading to the record (e.g. "wdtt/<sha>"); the record file
+// itself is checked separately by the caller. This closes the issue-#40
+// gap: Lstat of the final file would happily traverse symlinked ancestors.
+//
+// Trust boundary (honest, task 16 B3): this resists STATIC symlink
+// substitutions and detects components swapped after OpenStore. The
+// Lstat→Open sequence itself is not immune to an adversary mutating the
+// filesystem between the checks; full TOCTOU resistance would need
+// descriptor-relative traversal (openat/O_NOFOLLOW, Linux openat2
+// RESOLVE_NO_SYMLINKS), which is deliberately deferred — the accepted
+// model is a trusted, owner-controlled root with no concurrent attacker
+// on the same directory tree. See docs/ACCEPTANCE-STORE.md.
+func (s *Store) verifyReadPath(relSlash string) error {
+	if err := s.verifyRoot(); err != nil {
+		return err
+	}
+	cur := s.root
+	for _, part := range strings.Split(relSlash, "/") {
+		cur = filepath.Join(cur, part)
+		info, err := os.Lstat(cur)
+		if err != nil {
+			// Missing required directory: reading must not create one.
+			return fmt.Errorf("%w: %s: required directory is missing or unreadable", ErrUnsafePath, cur)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("%w: %s is a symlink", ErrUnsafePath, cur)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("%w: %s is not a directory", ErrUnsafePath, cur)
+		}
+	}
+	return nil
+}
+
+// verifyRoot re-checks the trust boundary itself: the canonical root must
+// still exist and must still be a REAL directory, not a symlink planted
+// after OpenStore.
+func (s *Store) verifyRoot() error {
+	info, err := os.Lstat(s.root)
+	if err != nil {
+		return fmt.Errorf("%w: store root %s is missing", ErrUnsafePath, s.root)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%w: store root %s is a symlink", ErrUnsafePath, s.root)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%w: store root %s is not a directory", ErrUnsafePath, s.root)
 	}
 	return nil
 }
@@ -250,8 +310,10 @@ func checkStoredIdentity(r Record, providerID, sha, recordID string) error {
 	return nil
 }
 
-// ReadRecord reads and re-validates one record. A corrupt, symlinked or
-// identity-mismatched file is a typed error, never a silent zero value.
+// ReadRecord reads and re-validates one record. A corrupt, symlinked,
+// identity-mismatched file or ANY symlinked intermediate directory is a
+// typed error, never a silent zero value (task 16: the whole component
+// chain is validated read-only before the final file is touched).
 func (s *Store) ReadRecord(providerID, sha, recordID string, now time.Time) (Record, error) {
 	var zero Record
 	path, err := s.recordPath(providerID, sha, recordID)
@@ -259,6 +321,9 @@ func (s *Store) ReadRecord(providerID, sha, recordID string, now time.Time) (Rec
 		return zero, err
 	}
 	if err := s.withinRoot(path); err != nil {
+		return zero, err
+	}
+	if err := s.verifyReadPath(filepath.ToSlash(filepath.Join(providerID, sha))); err != nil {
 		return zero, err
 	}
 	info, err := os.Lstat(path)
@@ -302,7 +367,12 @@ type Problem struct {
 }
 
 // ListRecords walks the store and returns valid entries plus problems.
-// Selectors narrow the walk ("" = unrestricted).
+// Selectors narrow the walk ("" = unrestricted). The walk NEVER follows
+// symlinks and never silently ignores them: a symlinked directory or file
+// anywhere in the tree is reported as a Problem, as is any element with an
+// unexpected type (directory instead of record, file instead of directory,
+// foreign file) — hidden hazards would hide integrity violations.
+// A symlinked or missing provider selector fails closed (ErrUnsafePath).
 func (s *Store) ListRecords(providerID, sha string, now time.Time) ([]Entry, []Problem, error) {
 	var (
 		entries  []Entry
@@ -314,22 +384,19 @@ func (s *Store) ListRecords(providerID, sha string, now time.Time) ([]Entry, []P
 			return nil, nil, fmt.Errorf("%w: invalid provider selector", ErrUnsafePath)
 		}
 		base = filepath.Join(s.root, providerID)
+		// Read-only whole-chain validation of the selector: symlinked,
+		// missing or mis-typed provider directories are refused outright.
+		if err := s.verifyReadPath(providerID); err != nil {
+			return nil, nil, err
+		}
 	}
 	err := filepath.WalkDir(base, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
+				problems = append(problems, Problem{path, "missing store element"})
 				return nil
 			}
 			return err
-		}
-		if d.IsDir() || !strings.HasSuffix(path, ".json") {
-			return nil
-		}
-		// Never follow or accept symlinked record files (WalkDir does not
-		// descend into them; a symlink with a .json name is still a hazard).
-		if d.Type()&os.ModeSymlink != 0 {
-			problems = append(problems, Problem{path, "symlinked record file"})
-			return nil
 		}
 		rel, relErr := filepath.Rel(s.root, path)
 		if relErr != nil {
@@ -337,7 +404,35 @@ func (s *Store) ListRecords(providerID, sha string, now time.Time) ([]Entry, []P
 			return nil
 		}
 		parts := strings.Split(filepath.ToSlash(rel), "/")
-		if len(parts) != 3 {
+		// Symlinks anywhere in the tree are surfaced, never followed
+		// (WalkDir does not descend into symlinked directories).
+		if d.Type()&os.ModeSymlink != 0 {
+			problems = append(problems, Problem{path, "symlink in store tree"})
+			return nil
+		}
+		if d.IsDir() {
+			switch {
+			case len(parts) == 1 || len(parts) == 2: // provider / sha dir
+				if len(parts) == 2 && sha != "" && !strings.EqualFold(parts[1], sha) {
+					return filepath.SkipDir
+				}
+				return nil
+			default:
+				problems = append(problems, Problem{path, "unexpected directory depth"})
+				return filepath.SkipDir
+			}
+		}
+		if !d.Type().IsRegular() {
+			problems = append(problems, Problem{path, "not a regular file"})
+			return nil
+		}
+		if len(parts) != 3 || !strings.HasSuffix(path, ".json") {
+			// Private temp files of an in-flight or crashed writer
+			// (.tmp-*) are known housekeeping, everything else at record
+			// depth is foreign and reported.
+			if len(parts) == 3 && strings.HasPrefix(d.Name(), ".tmp-") {
+				return nil
+			}
 			problems = append(problems, Problem{path, "unexpected layout"})
 			return nil
 		}
