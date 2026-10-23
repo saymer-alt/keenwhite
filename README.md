@@ -103,3 +103,12 @@ make crossbuild
 ---
 
 *EN: KeenWhite is an independent, non-fork toolkit for Keenetic/Netcraze. The original core is MIT; GPL-3.0 WDTT source was imported with preserved ancestry. Code build and QEMU tests passed, but real router/UDP acceptance and a stable product release are pending. KAS remains a separate optional installer.*
+
+## Bugs, ideas and feedback
+
+- **Bug** — [Bug report form](https://github.com/saymer-alt/keenwhite/issues/new?template=bug_report.yml)
+- **Feature** — [Feature request form](https://github.com/saymer-alt/keenwhite/issues/new?template=feature_request.yml)
+- **Anything else** — [blank issue](https://github.com/saymer-alt/keenwhite/issues/new)
+- **Vulnerability** — privately via [Report a vulnerability](https://github.com/saymer-alt/keenwhite/security/advisories/new); do not post technical details in public issues.
+
+Sanitize everything before publishing: no passwords, tokens, private keys, subscriptions, VPN keys or private IP configurations.
