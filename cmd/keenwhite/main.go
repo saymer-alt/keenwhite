@@ -13,7 +13,7 @@ import (
 )
 
 // Version is set at build time. The development version must not imply production readiness.
-var Version = "0.2.1-dev"
+var Version = "0.2.2-dev"
 
 // Swappable output sinks so tests can call run() and inspect the exact
 // streams (issue #32). Warnings are part of a successful report and go to

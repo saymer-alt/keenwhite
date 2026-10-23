@@ -21,7 +21,10 @@ Each phase needs test evidence; dates are not delivery promises.
 - [x] Provider Contract v1 (`internal/provider`, PR #14): versioned interface Validate/Prepare/Status/Start/Stop/Health; evidence levels; PROCESS_RUNNING / LISTENER_READY / TRAFFIC_E2E_VERIFIED kept distinct; measurement TTL with stale E2E downgrade.
 - [x] Hardened in task #11/#12 (PRs #22/#23/#25): admission at every boundary, plan-integrity, generations/ownership, bounded stop, LabGrant, fail-closed evidence.
 
-- Make native KeenWhite adapter contract versioned and map it explicitly to KAS MT-001/MT-002 JSON Schemas and status freshness semantics.
+- [x] MT-001 mapping is a faithful mirror of provider-v0.schema.json (task 14, PR #33): architecture array, static code/build capabilities with the documented mapping table, three conversion levels, full metadata preservation; regression suite on the ORIGINAL fixtures, parity with the 33 Python reference checks.
+- [x] Catalog diagnostics split ERROR/WARNING with effective-evidence downgrades (issue #32, PR #34): warnings never fail the CLI, unverifiable E2E is shown as UNKNOWN, text/JSON equivalent.
+- [x] Offline acceptance evidence store `keenwhite.acceptance/v1` (task 14, PR #35): append-only, source-capped ceilings (synthetic never becomes physical E2E), atomic writes, secret denylist. Limits: records unsigned; physical confirmation stays an owner evidence process.
+- [x] Emulator handoff infrastructure (task 14, PR #36): `RunProof` gate for the KEENETIC_EMULATOR label, honest MockEnvironment, portable `contracttest` suite, harness refuses every environment kind except local-fake. Real QemuEnvironment waits for the emulator project (issue #29).
 - Read-only protocol/port conflict checks, offline negative fixtures, no PID or service manipulation.
 - Evidence must distinguish `SOURCE_CONFIRMED`, `BUILD_CONFIRMED`, `E2E_VERIFIED`, `UNKNOWN`, `UNSUPPORTED`.
 
