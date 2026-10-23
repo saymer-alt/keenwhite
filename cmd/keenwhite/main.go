@@ -156,9 +156,9 @@ func runDoctor(c catalog.Catalog, eff []catalog.EffectiveEvidence, warns []contr
 	// levels, same warning list — only the rendering differs.
 	if jsonMode {
 		payload, _ := json.MarshalIndent(struct {
-			Tool     string          `json:"tool"`
-			Mode     string          `json:"mode"`
-			Results  []status        `json:"results"`
+			Tool     string             `json:"tool"`
+			Mode     string             `json:"mode"`
+			Results  []status           `json:"results"`
 			Warnings []contract.Finding `json:"warnings"`
 		}{"keenwhite", "offline", results, warns}, "", "  ")
 		fmt.Fprintln(stdout, string(payload))

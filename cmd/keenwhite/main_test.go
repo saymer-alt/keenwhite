@@ -160,8 +160,8 @@ func TestCLI_TCPStaleUDPFresh(t *testing.T) {
 	// Two providers share nothing: one stale-TCP, one fresh-TCP — effective
 	// levels must differ per provider and per axis.
 	p := cliCatalog(t,
-		cliProviderJSON(cliProvider{"prov-a", "127.0.0.1:1081", "E2E_VERIFIED", "SOURCE_CONFIRMED", "https://e.example/x", rfc(-100*24*time.Hour)}) + "," +
-			cliProviderJSON(cliProvider{"prov-b", "127.0.0.1:1083", "E2E_VERIFIED", "SOURCE_CONFIRMED", "https://e.example/y", rfc(-24*time.Hour)}))
+		cliProviderJSON(cliProvider{"prov-a", "127.0.0.1:1081", "E2E_VERIFIED", "SOURCE_CONFIRMED", "https://e.example/x", rfc(-100 * 24 * time.Hour)})+","+
+			cliProviderJSON(cliProvider{"prov-b", "127.0.0.1:1083", "E2E_VERIFIED", "SOURCE_CONFIRMED", "https://e.example/y", rfc(-24 * time.Hour)}))
 	r := cliRun(t, "providers", "-catalog", p)
 	if r.code != 0 {
 		t.Fatalf("exit=%d stderr=%s", r.code, r.stderr)
@@ -173,7 +173,7 @@ func TestCLI_TCPStaleUDPFresh(t *testing.T) {
 
 func TestCLI_ValidateErrorExitCode(t *testing.T) {
 	p := cliCatalog(t,
-		cliProviderJSON(cliProvider{"a", "127.0.0.1:1081", "SOURCE_CONFIRMED", "UNKNOWN", "", ""}) + "," +
+		cliProviderJSON(cliProvider{"a", "127.0.0.1:1081", "SOURCE_CONFIRMED", "UNKNOWN", "", ""})+","+
 			cliProviderJSON(cliProvider{"b", "127.0.0.1:1081", "SOURCE_CONFIRMED", "UNKNOWN", "", ""}))
 	r := cliRun(t, "validate", "-catalog", p)
 	if r.code != 1 {
@@ -213,7 +213,7 @@ func TestCLI_ErrorPlusWarning(t *testing.T) {
 	// Provider a: structural ERROR (invalid lifecycle). Provider b: legacy
 	// E2E warning. ERROR must win the exit code; PASS must not be printed.
 	p := cliCatalog(t,
-		cliProviderJSON(cliProvider{"a", "127.0.0.1:1081", "SOURCE_CONFIRMED", "UNKNOWN", "", ""}) + "," +
+		cliProviderJSON(cliProvider{"a", "127.0.0.1:1081", "SOURCE_CONFIRMED", "UNKNOWN", "", ""})+","+
 			cliProviderJSON(cliProvider{"b", "127.0.0.1:1083", "E2E_VERIFIED", "UNKNOWN", "https://e.example/y", ""}))
 	// make provider a structurally invalid by rewriting its lifecycle
 	docBytes, err := os.ReadFile(p)
@@ -245,16 +245,16 @@ func TestCLI_EmptyProvidersFails(t *testing.T) {
 }
 
 func TestCLI_DoctorJSONTextEquivalence(t *testing.T) {
-	p := cliCatalog(t, cliProviderJSON(cliProvider{"wdtt", "127.0.0.1:1081", "E2E_VERIFIED", "SOURCE_CONFIRMED", "https://e.example/x", rfc(-100*24*time.Hour)}))
+	p := cliCatalog(t, cliProviderJSON(cliProvider{"wdtt", "127.0.0.1:1081", "E2E_VERIFIED", "SOURCE_CONFIRMED", "https://e.example/x", rfc(-100 * 24 * time.Hour)}))
 	j := cliRun(t, "doctor", "-catalog", p, "-json")
 	x := cliRun(t, "doctor", "-catalog", p)
 	if j.code != 0 || x.code != 0 {
 		t.Fatalf("codes: json=%d text=%d", j.code, x.code)
 	}
 	var doc struct {
-		Tool     string `json:"tool"`
-		Mode     string `json:"mode"`
-		Results  []struct {
+		Tool    string `json:"tool"`
+		Mode    string `json:"mode"`
+		Results []struct {
 			Provider string `json:"provider"`
 			TCPE2E   string `json:"tcp_e2e"`
 			UDPE2E   string `json:"udp_e2e"`
@@ -286,7 +286,7 @@ func TestCLI_OldCatalogBehaviourUnchanged(t *testing.T) {
 	// A pre-0.2.1-style catalog without any E2E claim must behave exactly as
 	// before: PASS without warnings, written levels shown as-is.
 	p := cliCatalog(t,
-		cliProviderJSON(cliProvider{"wdtt", "127.0.0.1:1081", "SOURCE_CONFIRMED", "BUILD_CONFIRMED", "", ""}) + "," +
+		cliProviderJSON(cliProvider{"wdtt", "127.0.0.1:1081", "SOURCE_CONFIRMED", "BUILD_CONFIRMED", "", ""})+","+
 			cliProviderJSON(cliProvider{"openflux", "127.0.0.1:1083", "BUILD_CONFIRMED", "SOURCE_CONFIRMED", "", ""}))
 	v := cliRun(t, "validate", "-catalog", p)
 	if v.code != 0 || strings.Contains(v.stdout, "WARNING") {
