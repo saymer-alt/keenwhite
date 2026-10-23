@@ -20,9 +20,9 @@
 | `adapter_version` (semver) | — (нет поля) | WARNING при конвертации | адаптер в KW — код в `internal/provider/wdtt`; версия = контрактная `APIVersion()` |
 | `server_wire` (explicit id) | — (в каталоге: `wire`) | WARNING | в v1-манифесте не носится; каталог остаётся реестром |
 | `server_class` | — (в каталоге: `server_class`) | WARNING | аналогично |
-| `architecture` (arm64/mipsle) | `artifact.arch` | эквивалент | оба отказа от прочих архитектур |
-| `capabilities{name:{code,build}}` (статические) | `socks.tcp` / `socks.udp` (Evidence) | **частичный сдвиг** | MT несёт код/билд-уровни; KW — runtime-evidence. Повышение уровня запрещено: E2E из MT-манифеста → `UNKNOWN` + WARNING (нет measured_at/URL) |
-| `inbound_bind` (loopbackBind) | `socks.bind` | эквивалент+, KW строже: только `127.0.0.1` (MT допускал 127/8) | единая проверка `catalog.ValidateBind` |
+| `architecture` — МАССИВ `{arch, abi}` (`aarch64\|armv7\|mips\|mipsel\|x86_64`, 1..8, unique) | `artifact.arch` (`arm64\|mipsle`) + `artifact.path` на одну архитектуру | **явное отображение имён** | только `aarch64→arm64`, `mipsel→mipsle` (`contract.MTArchToKeenWhite`); прочие варианты сохраняются в диагностике verbatim; при 2+ кандидатах выбор не делается (ERROR `MT_ARCH_AMBIGUOUS`); ABI переносится verbatim (`ArchABI`) и совместимости не заявляет |
+| `capabilities{name:{code,build}}` — ДВА независимых статических атрибута (`PRESENT\|ABSENT\|UNKNOWN`, инвариант build=PRESENT ⇒ code=PRESENT) | `socks.tcp` / `socks.udp` (Evidence) | **таблица соответствия** (ниже, §1.1) | статика никогда не становится runtime evidence; `E2E_VERIFIED` из MT-001 недостижим по построению; отсутствие оси = `UNKNOWN` + WARNING (не PASS) |
+| `inbound_bind` (ровно `127.0.0.1:port`, MT-порт 1..65535) | `socks.bind` (`127.0.0.1`, порт 1024..65535) | эквивалент по хосту, KW строже по портам | порт <1024 валиден для MT-001 → WARNING `MT_BIND_OUTSIDE_V1`; финальное решение — admission Provider v1 |
 | `resource_requirements.admission_min_mb` (int\|null, 64..16384) | `resources.min_mem_available_mb` | эквивалент | `null` → 0 (без floor) |
 | `resource_requirements.admission_source` | `resources.admission_source` | эквивалент | строка-происхождение политики |
 | `resource_requirements.measured` (+`measurement_ref`) | — (нет поля) | UNKNOWN-finding | KAS-измерения не переносятся; KW меряет сама в Prepare/Start |
@@ -35,6 +35,43 @@
 | MT `status-v0` (verdicts PASS/FAIL/UNKNOWN/NOT_TESTED/UNSUPPORTED/STALE) | `provider.Status`/`Health` + Evidence | отображение | PASS↔свежий `E2E_VERIFIED`; STALE→даунгрейд в `UNKNOWN`; NOT_TESTED↔`UNKNOWN`; listener/process/E2E — раздельные состояния |
 | MT `acceptance-v0` (полевые записи по artifact+device+profile+duration) | — (нет хранилища) | **GAP → отдельная задача** | не выдумано; фикстуры остаются исследовательскими |
 
+### 1.1. Таблица соответствия статических capabilities (задание 14, этап A)
+
+MT-001 `capabilities` — статические атрибуты исходников (`code`) и собранного
+бинарника (`build`). Правило соответствия — единственное и документированное
+(`contract.mtCapabilityEvidence`); повышение и выдумывание уровней исключены:
+
+| code | build | → Evidence Provider v1 | Обоснование |
+|---|---|---|---|
+| PRESENT | PRESENT | `BUILD_CONFIRMED` | в исходниках и собрано в артефакт — максимум статики |
+| PRESENT | UNKNOWN | `SOURCE_CONFIRMED` | исходники подтверждают, состояние сборки неизвестно |
+| PRESENT | ABSENT | `UNSUPPORTED` | в исходниках есть, в этом артефакте — нет |
+| ABSENT | PRESENT | — (отказ) | нарушение монотонного инварианта схемы |
+| ABSENT | ABSENT | `UNSUPPORTED` | артефакт статически лишён возможности |
+| ABSENT | UNKNOWN | `UNKNOWN` | исходники отрицает, сборка не подтверждаема |
+| UNKNOWN | PRESENT | — (отказ) | нарушение монотонного инварианта схемы |
+| UNKNOWN | UNKNOWN | `UNKNOWN` | данных недостаточно |
+| UNKNOWN | ABSENT | `UNSUPPORTED` | артефакт лишён возможности независимо от исходников |
+
+Оси: `socks_tcp` → `socks.tcp`, `socks_udp` → `socks.udp`; остальные
+возможности (`tun`, …) сохраняются verbatim в `Map.Capabilities`.
+Ось, отображённая в `UNSUPPORTED`, делает манифест неисполняемым
+(`Runnable=false`); `UNKNOWN` остаётся структурно исполнимым и отказывает
+позже на runtime-admission (fail-closed).
+
+### 1.2. Три уровня готовности конверсии (задание 14, этап A2)
+
+`ParseMTDocument` возвращает `MTConversion` с тремя раздельными флагами:
+
+| Уровень | Смысл |
+|---|---|
+| `Parsed` | документ соответствует provider-v0.schema.json (успешный разбор исходника) |
+| `Partial` | часть полей не переносится 1:1 (есть WARNING/UNKNOWN/UNSUPPORTED-находки) |
+| `Runnable` | безопасно строить исполняемый Provider v1 манифест: нет ERROR, ровно одна исполнимая архитектура, обе оси заявлены и не `UNSUPPORTED` |
+
+`ParseMTProviderManifest` (совместимая обёртка) возвращает ошибку тогда и
+только тогда, когда `Runnable=false`.
+
 ## 2. Единые правила (реализованы в `internal/contract`)
 
 - `CheckEvidence(level, url, measured, ttl, now)` — одна и та же логика для
@@ -43,9 +80,10 @@
   понижает E2E до `UNKNOWN`; `SOURCE_CONFIRMED` никогда не повышается.
 - `CheckProviderSet(refs)` — дубликаты Provider ID и конфликты SOCKS-биндов
   по всему набору провайдеров.
-- `ParseMTProviderManifest(doc, now)` — строгая конвертация MT-001 → v1:
-  неизвестная `schema_version` = отказ; каждое непереносимое поле —
-  WARNING (никакой тихой потери); доказательственная дисциплина — п.1.
+- `ParseMTDocument(doc, now)` — полный фиделити-разбор MT-001 (см. §1.2);
+  `ParseMTProviderManifest(doc, now)` — совместимая обёртка: неизвестная
+  `schema_version` = отказ; каждое непереносимое поле — WARNING (никакой
+  тихой потери); доказательственная дисциплина — п.1.
 
 ## 3. Найденные расхождения и их статус
 
@@ -57,13 +95,23 @@
    правил набора — identity уже закреплена в адаптере (#25), наборная
    проверка ID добавлена в `contract.CheckProviderSet`.
 3. MT `capabilities` (code/build) vs KW Evidence (runtime) — семантический
-   сдвиг задокументирован; конвертация понижает неподтверждённый E2E.
+   сдвиг задокументирован; соответствие зафиксировано явной таблицей (§1.1),
+   `E2E_VERIFIED` из статики MT-001 недостижим по построению.
 4. Дублирование правил (catalog vs provider E2E) устранено — единая точка.
 5. `acceptance-v0` (полевые записи) в KW отсутствует — отдельная задача,
    не придумывается.
 6. «Циклические ссылки/зависимости» — в текущей схеме таких конструкций
    нет (каталог и манифесты одноуровневые); проверка не выдумывается.
    Если появятся — спецификация + отдельная задача.
+7. **Переоткрытие #4 (аудит задания 14) — исправлено**: конвертер читал
+   MT-001 неверной формы (`architecture` строкой, оси `tcp`/`udp` с
+   runtime-уровнями evidence) и отвергал оригинальные валидные фикстуры
+   (`cannot unmarshal array into Go struct field mtDoc.architecture`).
+   Реализовано точное зеркало provider-v0.schema.json: массив архитектур,
+   статические code/build, монотонный инвариант, полная сохранность
+   metadata (§1.1–§1.2). Регрессия: `internal/contract/mtfidelity_test.go`
+   на оригинальных фикстурах + паритет с корпусом invalid-фикстур
+   (Go-вердикты совпадают с `tests/multitransport-contract.py`).
 
 ## 4. Правила совместимости (этап C задания)
 

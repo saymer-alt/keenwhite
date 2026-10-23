@@ -369,13 +369,16 @@ func TestC15_WrongSHA(t *testing.T) {
 }
 
 // C16: the MT layer reports every semantic difference from Provider v1.
+// (Task 14 stage A: the document uses the REAL MT-001 shape — architecture
+// array of {arch,abi}, static code/build capabilities.)
 func TestC16_MTDifferencesReported(t *testing.T) {
 	doc := []byte(`{"schema_version":1,"provider_id":"wdtt","adapter_version":"1.0.0",
-		"server_wire":"wdtt-specific","server_class":"wdtt-compatible-exit","architecture":"arm64",
-		"capabilities":{"tcp":{"code":"SOURCE_CONFIRMED","build":"PRESENT"},"udp":{"code":"SOURCE_CONFIRMED","build":"PRESENT"}},
+		"server_wire":"wdtt-specific","server_class":"wdtt-compatible-exit",
+		"architecture":[{"arch":"aarch64","abi":"musl-static"}],
+		"capabilities":{"socks_tcp":{"code":"PRESENT","build":"PRESENT"},"socks_udp":{"code":"UNKNOWN","build":"UNKNOWN"}},
 		"inbound_bind":"127.0.0.1:1081",
-		"resource_requirements":{"admission_min_mb":512,"admission_source":"KAS-#137","measured":false},
-		"artifact_provenance":{"sha256":"` + ccSHA('a') + `","source_commit":"d39f9dad9163","artifact_path":"/opt/worker"},
+		"resource_requirements":{"admission_min_mb":512,"admission_source":"KAS-#137","measured":false,"measurement_ref":null},
+		"artifact_provenance":{"sha256":"` + ccSHA('a') + `","source_commit":"d39f9dad9163","artifact_path":"versions/0.1.0/worker"},
 		"configuration_reference":"docs/profile.md"}`)
 	_, f, err := contract.ParseMTProviderManifest(doc, ccNow)
 	if err != nil {
@@ -392,25 +395,29 @@ func TestC16_MTDifferencesReported(t *testing.T) {
 	}
 }
 
-// C17: invalid conversion is impossible — unknown versions and evidence
-// upgrades are structurally refused.
+// C17: invalid conversion is impossible — unknown versions, wrong shapes and
+// evidence upgrades are structurally refused.
 func TestC17_NoInvalidConversion(t *testing.T) {
 	if _, _, err := contract.ParseMTProviderManifest([]byte(`{"schema_version":3}`), ccNow); !errors.Is(err, contract.ErrUnknownSchemaVersion) {
 		t.Fatal("unknown MT version refused")
 	}
 	m := []byte(`{"schema_version":1,"provider_id":"wdtt","adapter_version":"1.0.0",
-		"server_wire":"w","server_class":"s","architecture":"arm64",
-		"capabilities":{"udp":{"code":"UNKNOWN","build":"ABSENT"}},
+		"server_wire":"wdtt-specific","server_class":"wdtt-compatible-exit",
+		"architecture":[{"arch":"mipsel","abi":"musl-static"}],
+		"capabilities":{"socks_tcp":{"code":"PRESENT","build":"PRESENT"},"socks_udp":{"code":"UNKNOWN","build":"UNKNOWN"}},
 		"inbound_bind":"127.0.0.1:1081",
-		"resource_requirements":{"admission_min_mb":null,"admission_source":"none","measured":false},
-		"artifact_provenance":{"sha256":"` + ccSHA('a') + `","source_commit":"abc1234","artifact_path":"/w"},
-		"configuration_reference":"c"}`)
+		"resource_requirements":{"admission_min_mb":null,"admission_source":null,"measured":false,"measurement_ref":null},
+		"artifact_provenance":{"sha256":"` + ccSHA('a') + `","source_commit":"abc1234","artifact_path":"versions/0.1.0/worker"},
+		"configuration_reference":"docs/profile.md"}`)
 	mapped, _, err := contract.ParseMTProviderManifest(m, ccNow)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if mapped.UDP != contract.EvidenceUnknown || mapped.UDP == contract.EvidenceE2EVerified {
 		t.Fatal("UNKNOWN evidence must remain UNKNOWN in the mapping")
+	}
+	if mapped.Arch != "mipsle" || mapped.ArchABI != "musl-static" {
+		t.Fatalf("aarch64/mipsel must map through the documented table, got %s/%s", mapped.Arch, mapped.ArchABI)
 	}
 }
 
