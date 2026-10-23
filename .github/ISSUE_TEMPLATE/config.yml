@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: "Vulnerability (private)"
+    url: https://github.com/saymer-alt/keenwhite/security/advisories/new
+    about: "Private vulnerability disclosure — do not open a public issue."
