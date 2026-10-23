@@ -41,6 +41,13 @@
   любой реализации `Environment`; [docs/EMULATOR-HANDOFF.md](docs/EMULATOR-HANDOFF.md).
 
 ### Качество
+- **Целостность acceptance-хранилища (issue #38)**: атомарный append-only
+  через `os.Link` (гонка Lstat→rename устранена; конкурентные писцы с одним
+  record-id — ровно один победитель, `ErrRecordExists` остальным), привязка
+  идентичности при чтении/листинге (`ErrIntegrity` для перемещённых/
+  подменённых записей), symlink-политика (канонический корень, no-follow
+  компоненты, `ErrUnsafePath`), fsync файла+каталога (каталог best-effort).
+  17 новых integrity/стресс-тестов.
 - Fuzz-таргеты `FuzzParseMTDocument` и `FuzzDecodeRecord` (инварианты
   трёхуровневой конверсии и строгого декодера; короткие сессии без
   находок). CI: `go vet`, `go test -race ./...`, harness-отчёт-артефакт,
