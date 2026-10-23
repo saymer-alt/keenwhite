@@ -11,10 +11,7 @@ import (
 	"os"
 	"regexp"
 	"strconv"
-	"strings"
 	"time"
-
-	"github.com/saymer-alt/keenwhite/internal/contract"
 )
 
 const APIVersion = "keenwhite.dev/v0alpha1"
@@ -72,80 +69,18 @@ func Load(path string) (Catalog, error) {
 var lifecycleValues = map[string]bool{"research": true, "candidate": true, "lab": true}
 var capabilityValues = map[string]bool{"UNKNOWN": true, "UNSUPPORTED": true, "SOURCE_CONFIRMED": true, "BUILD_CONFIRMED": true, "E2E_VERIFIED": true}
 
-// Validate implements a strict admission *documentation* gate, not a runtime health check.
+// Validate implements a strict admission *documentation* gate, not a runtime
+// health check. It is the historical string projection of ValidateDetailed
+// (diagnostics.go) — both severities are included; the CLI and other
+// callers that must separate blocking from advisory findings use
+// ValidateDetailed (issue #32).
 func Validate(c Catalog) []string {
-	var problems []string
-	if c.APIVersion != APIVersion {
-		problems = append(problems, "api_version must be "+APIVersion)
+	findings, _ := ValidateDetailed(c, time.Now())
+	out := make([]string, 0, len(findings))
+	for _, f := range findings {
+		out = append(out, f.Field+": "+f.Message)
 	}
-	if len(c.Providers) == 0 {
-		problems = append(problems, "providers must not be empty")
-	}
-	if len(c.Providers) > 100 {
-		problems = append(problems, "too many providers")
-	}
-	ids := make(map[string]bool)
-	binds := make(map[string]string)
-	for i, p := range c.Providers {
-		prefix := fmt.Sprintf("providers[%d] (%s): ", i, p.ID)
-		if !providerIDPattern.MatchString(p.ID) {
-			problems = append(problems, prefix+"invalid ID")
-		}
-		if ids[p.ID] {
-			problems = append(problems, prefix+"duplicate ID")
-		}
-		ids[p.ID] = true
-		if strings.TrimSpace(p.Name) == "" {
-			problems = append(problems, prefix+"name required")
-		}
-		if !lifecycleValues[p.Lifecycle] {
-			problems = append(problems, prefix+"invalid lifecycle (no production state in alpha)")
-		}
-		if p.Source == "" || !strings.HasPrefix(p.Source, "https://github.com/") {
-			problems = append(problems, prefix+"source must be a GitHub HTTPS URL")
-		}
-		if p.Wire == "" || p.ServerClass == "" {
-			problems = append(problems, prefix+"wire and server_class required")
-		}
-		if !capabilityValues[p.TCP] {
-			problems = append(problems, prefix+"invalid TCP evidence level")
-		}
-		if !capabilityValues[p.UDP] {
-			problems = append(problems, prefix+"invalid UDP evidence level")
-		}
-		if (p.TCP == "E2E_VERIFIED" || p.UDP == "E2E_VERIFIED") && p.EvidenceURL == "" {
-			problems = append(problems, prefix+"E2E_VERIFIED requires evidence_url")
-		}
-		// Unified evidence freshness (issue #4): identical rules to the
-		// provider manifest. A missing date is a WARNING (backward
-		// compatible); a future or stale date is an error.
-		for _, lvl := range []string{p.TCP, p.UDP} {
-			if lvl != "E2E_VERIFIED" {
-				continue
-			}
-			_, findings := contract.CheckEvidence(lvl, p.EvidenceURL,
-				p.EvidenceMeasuredAt, 0, time.Now())
-			for _, fnd := range findings {
-				switch fnd.Code {
-				case "E2E_NO_MEASUREMENT":
-					problems = append(problems, prefix+"WARNING: E2E_VERIFIED without a measurement date cannot be re-checked for freshness")
-				default:
-					problems = append(problems, prefix+string(fnd.Severity)+": "+fnd.Message)
-				}
-			}
-		}
-		if p.KASCombinedMinRAMMB != nil && (*p.KASCombinedMinRAMMB < 64 || *p.KASCombinedMinRAMMB > 16384) {
-			problems = append(problems, prefix+"invalid combined RAM floor")
-		}
-		if err := ValidateBind(p.Bind); err != nil {
-			problems = append(problems, prefix+err.Error())
-		}
-		if prior, ok := binds[p.Bind]; ok {
-			problems = append(problems, prefix+"bind conflicts with "+prior)
-		}
-		binds[p.Bind] = p.ID
-	}
-	return problems
+	return out
 }
 
 // ValidateBind allows ONLY the v0 IPv4 loopback address and nonprivileged ports.
