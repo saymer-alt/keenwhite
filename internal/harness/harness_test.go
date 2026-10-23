@@ -82,3 +82,31 @@ func indexOf(hay, needle string) int {
 	}
 	return -1
 }
+
+// Task 14 D3: the result source is derived from the environment kind, and
+// only local-fake may run. Any other kind — including a future
+// "keenetic-emulator" label without a verified adapter — must produce a
+// FAILING report, never a silently mislabeled passing one.
+func TestUnverifiedEnvironmentKindFailsClosed(t *testing.T) {
+	for _, kind := range []string{"keenetic-emulator", "qemu-user", ""} {
+		env := Environment{Kind: kind, Emulator: "unknown"}
+		report := Run(env, AllScenarios())
+		if report.Summary.AllOK {
+			t.Fatalf("kind %q must not produce an AllOK report", kind)
+		}
+		if report.ResultSource != "UNVERIFIED" {
+			t.Fatalf("kind %q must be labeled UNVERIFIED, got %s", kind, report.ResultSource)
+		}
+		if report.Summary.Total != 1 || report.Scenarios[0].Name != "environment" {
+			t.Fatalf("unverified kind must fail with a single environment finding: %+v", report)
+		}
+	}
+}
+
+// The default environment is always LOCAL_FAKE in the report.
+func TestLocalFakeReportSource(t *testing.T) {
+	report := Run(DefaultEnvironment(), AllScenarios())
+	if report.ResultSource != "LOCAL_FAKE" {
+		t.Fatalf("local-fake report must carry LOCAL_FAKE, got %s", report.ResultSource)
+	}
+}

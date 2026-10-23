@@ -47,14 +47,21 @@ type ScenarioResult struct {
 
 // Report is the machine-readable result for CI artifacts.
 type Report struct {
-	ReportVersion int              `json:"report_version"`
-	Tool          string           `json:"tool"`
-	APIVersion    string           `json:"api_version"`
-	Environment   Environment      `json:"environment"`
-	StartedAt     time.Time        `json:"started_at"`
-	DurationMS    int64            `json:"duration_ms"`
-	Scenarios     []ScenarioResult `json:"scenarios"`
-	Summary       Summary          `json:"summary"`
+	ReportVersion int         `json:"report_version"`
+	Tool          string      `json:"tool"`
+	APIVersion    string      `json:"api_version"`
+	Environment   Environment `json:"environment"`
+	// ResultSource labels WHERE these results came from (task 14 D3). It is
+	// DERIVED from the environment kind, never asserted by scenarios: the
+	// local-fake environment is always LOCAL_FAKE. No other kind is
+	// accepted by Run until a verified emulator adapter exists, so a run
+	// can never acquire the KEENETIC_EMULATOR label without the proof set
+	// of emulator.RunProof.
+	ResultSource string           `json:"result_source"`
+	StartedAt    time.Time        `json:"started_at"`
+	DurationMS   int64            `json:"duration_ms"`
+	Scenarios    []ScenarioResult `json:"scenarios"`
+	Summary      Summary          `json:"summary"`
 }
 
 // Summary aggregates pass/fail counts.
@@ -96,6 +103,20 @@ func Run(env Environment, scenarios map[string]func(h *H)) Report {
 		Environment:   env,
 		StartedAt:     time.Now().UTC(),
 	}
+	// Environment gate (task 14 D3): only the verified local-fake
+	// environment may run today. Any other kind produces a FAILING report —
+	// never a silently mislabeled one.
+	if env.Kind != "local-fake" {
+		report.ResultSource = "UNVERIFIED"
+		report.Scenarios = append(report.Scenarios, ScenarioResult{
+			Name: "environment", Status: "FAIL",
+			Detail: "environment kind " + env.Kind + " is not accepted: only local-fake runs until a verified emulator adapter supplies a complete RunProof",
+		})
+		report.Summary.Fail = 1
+		report.Summary.Total = 1
+		return report
+	}
+	report.ResultSource = "LOCAL_FAKE"
 	names := make([]string, 0, len(scenarios))
 	for name := range scenarios {
 		names = append(names, name)
