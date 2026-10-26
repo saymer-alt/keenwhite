@@ -303,9 +303,12 @@ func TestC10_FutureEvidence(t *testing.T) {
 	if eff != contract.EvidenceUnknown {
 		t.Fatalf("future evidence must downgrade, got %s", eff)
 	}
+	// The manifest validator uses time.Now(), whereas CheckEvidence above uses
+	// the injected ccNow. Keep the manifest's "future" relative to its real clock.
+	manifestFuture := time.Now().UTC().Add(24 * time.Hour)
 	doc := ccManifestJSON("wdtt", "127.0.0.1:1081", contract.EvidenceE2EVerified, contract.EvidenceUnknown,
 		func(m map[string]any) {
-			m["evidence"] = map[string]any{"evidence_url": "https://e/x", "measured_at": future.Format(time.RFC3339Nano)}
+			m["evidence"] = map[string]any{"evidence_url": "https://e/x", "measured_at": manifestFuture.Format(time.RFC3339Nano)}
 		})
 	if !ccHas(ccProviderProblems(t, doc), "evidence.measured_at", "future") {
 		t.Fatal("provider validation must flag future-dated evidence")
