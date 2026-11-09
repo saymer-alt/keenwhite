@@ -11,3 +11,9 @@ This is a new independent GitHub repository, not a fork. All original first-part
 7. WDTT GPL source migration must keep original copyright, LICENSE and Git history; do not portray upstream contributors as KeenWhite authors. New dependencies and copied code need a license audit; PolyForm and unreviewed GPL code is not allowed into the MIT core.
 
 The roadmap in `docs/ROADMAP.md` is a plan, not evidence that any adapter works.
+
+## Стандарт небольших и проверяемых изменений
+
+Для всех проектов `saymer-alt` действует [общий инженерный стандарт ревью](https://github.com/saymer-alt/saymer-infrastructure/blob/main/docs/engineering-change-review-standard.md). Это правило для **людей и ИИ**, а не файл инструкций агенту.
+
+**Одна проблема → минимальное смысловое исправление → необходимые тесты → один обозримый PR → подтверждение результата.** Не смешивайте hotfix с рефакторингом, переименованиями и посторонними функциями. Если найден другой независимый дефект — отдельное Issue/PR. Размер изменений определяется не количеством строк, а возможностью доказать и проверить их; не отрывайте обязательные тесты и миграции от исправления. Большой неделимый diff требует отдельного обоснования и review. В описании PR указывайте границы, проверки и `NOT_TESTED`; CI PASS не означает field/runtime PASS. Проектные правила безопасности, веток и выпуска сохраняются.
